@@ -83,6 +83,9 @@ docs/
   added as an external login. Identity keeps a local `ApplicationUser` linked to it, so roles and
   profile data stay ours. Turning Microsoft sign-in on is configuration only (tenant ID, client ID,
   secret); no code changes.
+  - The template's external-login page creates accounts without asking for an invite code. Those
+    accounts get no role, so they can't reach instructor pages. Before turning Microsoft sign-in on,
+    add the invite code (or the domain rule) to that page.
 
 ### Becoming an instructor: invite codes
 **Registration requires an invite code.** There is no open sign-up page.

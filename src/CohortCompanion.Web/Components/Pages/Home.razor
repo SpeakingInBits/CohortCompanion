@@ -1,0 +1,19 @@
+﻿@page "/"
+
+<PageTitle>CohortCompanion</PageTitle>
+
+<h1>CohortCompanion</h1>
+
+<p class="lead">Live presentations and quizzes for your classroom.</p>
+
+<AuthorizeView Roles="@Roles.Instructor">
+    <Authorized>
+        <p>Welcome back, @context.User.Identity?.Name. Presentations and quizzes are on the way.</p>
+    </Authorized>
+    <NotAuthorized>
+        <p>
+            Instructors: <a href="Account/Login">log in</a>, or
+            <a href="Account/Register">register with an invite code</a>.
+        </p>
+    </NotAuthorized>
+</AuthorizeView>
