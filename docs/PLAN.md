@@ -14,9 +14,9 @@ or a short join link.
 | Topic | Decision |
 |---|---|
 | Audience | A single higher-ed school, many instructors |
-| Hosting | Demo: SpeakingInBits's Azure, for testers. Long term: the school hosts it on its own servers or in its own Azure subscription |
-| Instructor sign-in | ASP.NET Core Identity. Email/password for the demo; Microsoft work accounts added once the school registers the app for production |
-| Instructor access | Automatic for a verified email at the school's domain, or by invite code |
+| Hosting | Azure. Demo on SpeakingInBits's subscription for testers. If the school later needs its own infrastructure, we refactor then |
+| Instructor sign-in | ASP.NET Core Identity with email/password. No email confirmation for now. Microsoft work accounts added once the school registers the app for production |
+| Instructor access | Invite code only, for everyone |
 | Student identity | Anonymous, nickname only. No student accounts for now |
 | Presentations vs quizzes | Separate features for now |
 | Quiz pacing | Instructor-paced, or timed with a time limit per question and automatic advance |
@@ -26,7 +26,7 @@ or a short join link.
 | Local database | SQL Server LocalDB |
 | Production database | Azure SQL |
 | LMS | Canvas (LTI 1.3) is a future option; design now so it can be added |
-| Student data retention | Not needed. Participant-level data is short-lived (see FERPA section) |
+| Student data retention | None. Per-nickname data is deleted when the session ends; only per-question totals are kept |
 
 ---
 
@@ -41,19 +41,13 @@ or a short join link.
   - Dev: `Server=(localdb)\MSSQLLocalDB;Database=CohortCompanion;Trusted_Connection=True;MultipleActiveResultSets=true`
   - Prod: Azure SQL using a managed identity (`Authentication=Active Directory Default`), so the
     connection string holds no password
-- **Hosting must stay portable.** The demo runs on Azure, but the school will host the app on its own
-  servers or in its own Azure subscription. Nothing may require an Azure-only service:
-  - Database: any SQL Server (LocalDB, on-premises SQL Server, or Azure SQL)
-  - File storage: an `IFileStore` interface with a local-disk implementation and an Azure Blob Storage
-    implementation, picked in configuration
-  - Email: an `IEmailSender` interface with SMTP (the school's mail server) and Azure Communication
-    Services implementations, plus a dev implementation that writes emails to the log
-  - SignalR: built in, single instance. Azure SignalR Service only if scale ever demands it
-  - Secrets: standard ASP.NET Core configuration (environment variables, user secrets in dev). Key Vault
-    is optional, wired in only when its URI is configured
-- **Demo hosting:** Azure App Service (Linux) with WebSockets turned on and ARR affinity, plus Azure SQL
-- **School hosting:** IIS on Windows Server, or Azure App Service in the school's subscription. A
-  self-hosting guide ships with the repo
+- **Hosting: Azure.** If the school later needs to run it on its own infrastructure, we refactor then.
+  - Azure App Service (Linux) with WebSockets turned on and ARR affinity
+  - Azure SQL
+  - Azure Blob Storage for uploaded images (Azurite emulator in dev)
+  - SignalR built in, single instance. Azure SignalR Service only if scale ever demands it
+  - Secrets in Azure Key Vault, referenced from App Service settings. User secrets in dev
+  - Infrastructure defined in Bicep
 - **UI components:** Radzen.Blazor (MIT). It provides an HTML editor, drag and drop, charts, and dialogs
   in one library. The rich-text editor sits behind our own component so we can swap it (for example
   for TipTap via JS interop) if it proves too limited
@@ -81,28 +75,27 @@ docs/
 ## 3. Authentication and authorization
 
 ### Instructors
-- **Demo:** ASP.NET Core Identity with email/password accounts and email confirmation.
+- **Now:** ASP.NET Core Identity with email/password accounts. Emails are **not** confirmed
+  (`RequireConfirmedAccount = false`), so no email service is needed yet.
+  - Password reset works without email: an admin generates a one-time reset link from the instructor
+    list and passes it on.
 - **Production:** the school registers a single-tenant app in its Entra tenant and Microsoft sign-in is
   added as an external login. Identity keeps a local `ApplicationUser` linked to it, so roles and
-  profile data stay ours. Email/password accounts remain for invited guests. Turning Microsoft sign-in
-  on is configuration only (tenant ID, client ID, secret); no code changes.
+  profile data stay ours. Turning Microsoft sign-in on is configuration only (tenant ID, client ID,
+  secret); no code changes.
 
-### Becoming an instructor
-A new account gets the `Instructor` role in one of two ways:
-1. **School email domain.** `Auth:InstructorEmailDomains` (for example `["school.edu"]`) lists the
-   allowed domains. An account whose email is at one of them becomes an instructor automatically, but
-   only once the email is **verified**: confirmed through the emailed link, or vouched for by Microsoft
-   sign-in. Without verification, anyone could register a made-up `@school.edu` address.
-2. **Invite code.** For testers and guests outside the domain.
-   - An admin creates an `InviteCode`: a short code (for example `K7M-4QX`) and a link
-     (`/register?invite=K7M-4QX`).
-   - Each code has an optional note ("Spring testers"), an optional email it is locked to, a maximum
-     number of uses (default 1), and an expiry date (default 14 days).
-   - Registering with a valid code grants `Instructor` and records which code was used. Admins can
-     revoke a code and see who redeemed it.
-
-An account that matches neither (for example, a student who registers with their school email while
-the domain rule is off) sees a "no instructor access yet" page and can enter an invite code there.
+### Becoming an instructor: invite codes
+**Registration requires an invite code.** There is no open sign-up page.
+- An admin creates an `InviteCode`: a short code (for example `K7M-4QX`) and a link
+  (`/register?invite=K7M-4QX`).
+- Each code has an optional note ("Spring testers"), an optional email it is locked to, a maximum
+  number of uses (default 1), and an expiry date (default 14 days).
+- Registering with a valid code creates the account with the `Instructor` role and records which code
+  was used. Admins can revoke a code and see who redeemed it.
+- Because emails aren't confirmed, the invite code is the only gate. Locking a code to an email or
+  keeping uses at 1 stops a shared link from letting strangers in.
+- _Later:_ automatic instructor access for the school's email domain, once Microsoft sign-in or email
+  confirmation makes email addresses trustworthy.
 
 ### Roles
 - `Admin`: manages instructors and invite codes, sees school-wide usage, can delete any content.
@@ -173,7 +166,10 @@ Notes:
     join code
   - A projector view opens in a second window
   - Student devices show the current slide and follow the instructor automatically.
-    _Open question: may students scroll back to earlier slides?_
+  - Students can swipe or tap back to any slide the instructor has already shown, but never ahead of
+    the instructor. While a student is browsing an earlier slide, their device stops following, and a
+    **"Jump to live"** button (with a badge saying how many slides behind they are) takes them back to
+    the instructor's current slide and resumes following.
 
 ---
 
@@ -285,18 +281,19 @@ and limits what is kept and shown.
   - Word cloud and fill-in-the-blank results are shown as aggregates, without nicknames.
 
 **Data retention**
-- `Participant` and `Response` rows are deleted by a background job a short time after the session
-  ends (proposed default: 24 hours, so the instructor can review results the same day).
+- **When a session ends, its `Participant` and `Response` rows are deleted** in the same operation
+  that writes the `SessionSummary` aggregates and marks the session `Ended`. Per-nickname results
+  exist only while the session is live.
+- The final podium is shown before the session ends, so nothing is lost by deleting right after.
+- A background job sweeps sessions abandoned without being ended (no activity for 12 hours), so
+  per-nickname data can't linger when an instructor just closes the laptop.
 - `SessionSummary` aggregates are kept with no participant data, so instructors can see how a class
   did on each question over time.
-- Instructors can delete a session's data immediately.
 
 **Exports**
-- Default export is aggregate only (per-question results).
-- If a per-nickname export is added, the UI warns that nicknames may identify students and that the
-  exported file becomes the instructor's responsibility under school policy.
-- Scores from anonymous quizzes should not be used for grades. Graded use waits for Canvas
-  integration, where identity is handled properly.
+- Exports are aggregate only (per-question results). There is no per-nickname export.
+- Scores from anonymous quizzes are not meant for grades. Graded use waits for Canvas integration,
+  where identity is handled properly.
 
 **Logging and telemetry**
 - Never log answer content or nicknames.
@@ -313,8 +310,8 @@ and limits what is kept and shown.
 **Who operates the app**
 - **Demo (now):** SpeakingInBits hosts it on Azure for testers. No agreement with the school for now,
   since the data is anonymous and short-lived. The demo should not be used to run real graded classes.
-- **Long term:** the school hosts it on its own servers or in its own Azure subscription. The data
-  never leaves the school, so no vendor agreement is needed.
+- **Long term:** the school hosts it, most likely in its own Azure subscription. The data never
+  leaves the school, so no vendor agreement is needed.
 - If SpeakingInBits ever hosts it for real classes with identified students (for example after Canvas
   integration), SpeakingInBits becomes a vendor. The school would then need to designate it a "school
   official" under a written agreement covering permitted use, no redisclosure, security, and deletion.
@@ -340,17 +337,17 @@ reworking it.
 
 ## 9. Milestones
 
-1. **Foundation:** solution scaffold, EF Core with LocalDB, Identity with email/password and email
-   confirmation, roles, domain rule and invite codes, layout and theme, CI build
+1. **Foundation:** solution scaffold, EF Core with LocalDB, Identity with email/password, roles,
+   bootstrap admin, invite codes, admin password-reset links, layout and theme, CI build
 2. **Quiz authoring:** quiz CRUD, editors for all three question types, code snippets with highlighting
 3. **Live quiz (instructor-paced):** join code, QR code, lobby, SignalR hub, phases, results charts, reveal
 4. **Scoring and timed mode:** timers, speed bonus, leaderboard, auto-advance
 5. **Presentation authoring:** visual slide editor, layouts, themes, image upload
 6. **Live presentations:** presenter view, projector view, students following along
-7. **Privacy hardening and demo deployment:** purge job, privacy notice, rate limiting, Azure
-   infrastructure (Bicep), demo deployment for testers
-8. **School handoff:** Microsoft sign-in (configuration only), self-hosting guide for IIS and for the
-   school's own Azure subscription
+7. **Privacy hardening and demo deployment:** delete-on-end and abandoned-session sweep, privacy
+   notice, rate limiting, Azure infrastructure (Bicep), demo deployment for testers
+8. **School handoff:** Microsoft sign-in (configuration only), deployment guide for the school's own
+   Azure subscription
 9. **Later:** Canvas LTI 1.3, self-paced homework quizzes, Q&A with upvoting, the "I'm lost" signal,
    co-teaching and sharing, PowerPoint import
 
@@ -358,9 +355,4 @@ reworking it.
 
 ## 10. Open questions
 
-1. **Retention window:** is 24 hours of per-nickname results right, or should they be deleted the
-   moment the session ends?
-2. **Presentations:** may students navigate back to earlier slides on their device, or stay locked to
-   the instructor's current slide?
-3. **Demo email:** which service sends confirmation and password-reset emails from the demo? Azure
-   Communication Services is the default assumption.
+None right now. Answered questions are recorded in section 1.
