@@ -13,11 +13,13 @@ or a short join link.
 
 | Topic | Decision |
 |---|---|
-| Audience | A single school, many instructors |
-| Instructor sign-in | ASP.NET Core Identity as the user store, with Microsoft (Entra ID) work accounts as the external login |
+| Audience | A single higher-ed school, many instructors |
+| Hosting | Demo: SpeakingInBits's Azure, for testers. Long term: the school hosts it on its own servers or in its own Azure subscription |
+| Instructor sign-in | ASP.NET Core Identity. Email/password for the demo; Microsoft work accounts added once the school registers the app for production |
+| Instructor access | Automatic for a verified email at the school's domain, or by invite code |
 | Student identity | Anonymous, nickname only. No student accounts for now |
 | Presentations vs quizzes | Separate features for now |
-| Quiz pacing | Instructor-paced and timed modes |
+| Quiz pacing | Instructor-paced, or timed with a time limit per question and automatic advance |
 | Scoring | Optional per quiz |
 | Slide authoring | Visual editor aimed at non-technical instructors |
 | Code support | Syntax highlighting in slides and quiz questions |
@@ -39,9 +41,19 @@ or a short join link.
   - Dev: `Server=(localdb)\MSSQLLocalDB;Database=CohortCompanion;Trusted_Connection=True;MultipleActiveResultSets=true`
   - Prod: Azure SQL using a managed identity (`Authentication=Active Directory Default`), so the
     connection string holds no password
-- **Hosting:** Azure App Service (Linux) with WebSockets turned on and ARR affinity. Add Azure SignalR
-  Service only if more than one instance is needed
-- **Secrets:** Azure Key Vault referenced from App Service settings
+- **Hosting must stay portable.** The demo runs on Azure, but the school will host the app on its own
+  servers or in its own Azure subscription. Nothing may require an Azure-only service:
+  - Database: any SQL Server (LocalDB, on-premises SQL Server, or Azure SQL)
+  - File storage: an `IFileStore` interface with a local-disk implementation and an Azure Blob Storage
+    implementation, picked in configuration
+  - Email: an `IEmailSender` interface with SMTP (the school's mail server) and Azure Communication
+    Services implementations, plus a dev implementation that writes emails to the log
+  - SignalR: built in, single instance. Azure SignalR Service only if scale ever demands it
+  - Secrets: standard ASP.NET Core configuration (environment variables, user secrets in dev). Key Vault
+    is optional, wired in only when its URI is configured
+- **Demo hosting:** Azure App Service (Linux) with WebSockets turned on and ARR affinity, plus Azure SQL
+- **School hosting:** IIS on Windows Server, or Azure App Service in the school's subscription. A
+  self-hosting guide ships with the repo
 - **UI components:** Radzen.Blazor (MIT). It provides an HTML editor, drag and drop, charts, and dialogs
   in one library. The rich-text editor sits behind our own component so we can swap it (for example
   for TipTap via JS interop) if it proves too limited
@@ -69,24 +81,33 @@ docs/
 ## 3. Authentication and authorization
 
 ### Instructors
-- Instructors sign in with their school Microsoft account. ASP.NET Core Identity keeps a local
-  `ApplicationUser` linked to the external login, so we have roles and profile data of our own.
-- **Only the school's tenant may sign in.** Two ways to set this up:
-  1. **Single-tenant app registration in the school's Entra tenant.** Simplest and most secure, but it
-     needs the school's IT to create one app registration (about 10 minutes of work) and possibly grant
-     admin consent.
-  2. **Multi-tenant app registered in the SpeakingInBits tenant, restricted in code** to the school's
-     tenant ID (issuer validation). No app registration is needed on the school's side. Users approve
-     the minimal `openid profile email` scopes themselves, unless the school has turned user consent off,
-     in which case an admin clicks one consent link once. Getting the app **publisher-verified** avoids
-     Microsoft's block on user consent for apps from unverified publishers.
-- Local email/password accounts are turned off at first. They can be enabled later as a fallback.
+- **Demo:** ASP.NET Core Identity with email/password accounts and email confirmation.
+- **Production:** the school registers a single-tenant app in its Entra tenant and Microsoft sign-in is
+  added as an external login. Identity keeps a local `ApplicationUser` linked to it, so roles and
+  profile data stay ours. Email/password accounts remain for invited guests. Turning Microsoft sign-in
+  on is configuration only (tenant ID, client ID, secret); no code changes.
+
+### Becoming an instructor
+A new account gets the `Instructor` role in one of two ways:
+1. **School email domain.** `Auth:InstructorEmailDomains` (for example `["school.edu"]`) lists the
+   allowed domains. An account whose email is at one of them becomes an instructor automatically, but
+   only once the email is **verified**: confirmed through the emailed link, or vouched for by Microsoft
+   sign-in. Without verification, anyone could register a made-up `@school.edu` address.
+2. **Invite code.** For testers and guests outside the domain.
+   - An admin creates an `InviteCode`: a short code (for example `K7M-4QX`) and a link
+     (`/register?invite=K7M-4QX`).
+   - Each code has an optional note ("Spring testers"), an optional email it is locked to, a maximum
+     number of uses (default 1), and an expiry date (default 14 days).
+   - Registering with a valid code grants `Instructor` and records which code was used. Admins can
+     revoke a code and see who redeemed it.
+
+An account that matches neither (for example, a student who registers with their school email while
+the domain rule is off) sees a "no instructor access yet" page and can enter an invite code there.
 
 ### Roles
-- `Admin`: manages instructors, sees school-wide usage, can delete any content
-- `Instructor`: creates and runs their own presentations and quizzes
-- A signed-in user with neither role sees a "waiting for approval" page (see open questions about how
-  instructors get approved)
+- `Admin`: manages instructors and invite codes, sees school-wide usage, can delete any content.
+  The first admin is created at startup from configuration (`Auth:BootstrapAdminEmail`).
+- `Instructor`: creates and runs their own presentations and quizzes.
 - Instructors can only see their own content and sessions. Sharing or co-teaching is a later feature.
 
 ### Students
@@ -97,6 +118,13 @@ docs/
 ---
 
 ## 4. Domain model
+
+### Accounts
+
+| Entity | Key fields |
+|---|---|
+| `ApplicationUser` | Identity user, plus DisplayName, CreatedAt, InviteCodeId (if one was used) |
+| `InviteCode` | Id, Code, Note, LockedToEmail, MaxUses, UseCount, ExpiresAt, CreatedById, RevokedAt |
 
 ### Authoring
 
@@ -172,11 +200,10 @@ Notes:
 ### Modes
 - **Instructor-paced:** the instructor opens each question, closes it, shows results, and reveals the
   answer. A per-question timer is optional and only closes the question; the instructor still advances.
-- **Timed:** every question has a time limit. When the timer runs out the question closes, results and
-  the answer show for a few seconds, and the quiz moves to the next question automatically. The
-  instructor can pause or skip.
-  _Open question: is "timed" this auto-advance style, or a single time limit for the whole quiz that
-  students work through at their own pace? Section 10 asks._
+- **Timed:** every question has its own time limit (the quiz default, overridable per question).
+  When the timer runs out the question closes, results and the answer show for a few seconds
+  (configurable, default 5), and the quiz moves to the next question automatically. The instructor
+  can pause, extend the timer, or skip.
 
 ### Question phases
 `Waiting → Open → Closed → ShowingResults → AnswerRevealed → (next question)`
@@ -284,11 +311,18 @@ and limits what is kept and shown.
 - A written incident response contact and process, in case of a breach.
 
 **Who operates the app**
-- If the **school** hosts it in its own Azure subscription, the data never leaves the school.
-- If **SpeakingInBits** hosts it, SpeakingInBits is a vendor. The school must designate it a
-  "school official" with a legitimate educational interest, under a written agreement covering
-  permitted use, no redisclosure, security, and deletion. This matters little while data is anonymous
-  and short-lived, but it is required before Canvas integration.
+- **Demo (now):** SpeakingInBits hosts it on Azure for testers. No agreement with the school for now,
+  since the data is anonymous and short-lived. The demo should not be used to run real graded classes.
+- **Long term:** the school hosts it on its own servers or in its own Azure subscription. The data
+  never leaves the school, so no vendor agreement is needed.
+- If SpeakingInBits ever hosts it for real classes with identified students (for example after Canvas
+  integration), SpeakingInBits becomes a vendor. The school would then need to designate it a "school
+  official" under a written agreement covering permitted use, no redisclosure, security, and deletion.
+
+**Age**
+- The school is higher ed, so COPPA (children under 13) does not apply, and neither do K-12 state
+  laws such as SOPIPA. Dual-enrollment high school students in college classes are still covered by
+  the same anonymous-by-default design.
 
 ### What changes when Canvas (LTI 1.3) arrives
 LTI launches pass real names, Canvas user IDs, and roster data, and grade passback writes scores into
@@ -306,32 +340,27 @@ reworking it.
 
 ## 9. Milestones
 
-1. **Foundation:** solution scaffold, EF Core with LocalDB, Identity with Microsoft login, roles,
-   instructor approval, layout and theme, CI build
+1. **Foundation:** solution scaffold, EF Core with LocalDB, Identity with email/password and email
+   confirmation, roles, domain rule and invite codes, layout and theme, CI build
 2. **Quiz authoring:** quiz CRUD, editors for all three question types, code snippets with highlighting
 3. **Live quiz (instructor-paced):** join code, QR code, lobby, SignalR hub, phases, results charts, reveal
 4. **Scoring and timed mode:** timers, speed bonus, leaderboard, auto-advance
 5. **Presentation authoring:** visual slide editor, layouts, themes, image upload
 6. **Live presentations:** presenter view, projector view, students following along
-7. **Privacy hardening and deployment:** purge job, privacy notice, rate limiting, Azure
-   infrastructure (Bicep), production deployment
-8. **Later:** Canvas LTI 1.3, self-paced homework quizzes, Q&A with upvoting, the "I'm lost" signal,
+7. **Privacy hardening and demo deployment:** purge job, privacy notice, rate limiting, Azure
+   infrastructure (Bicep), demo deployment for testers
+8. **School handoff:** Microsoft sign-in (configuration only), self-hosting guide for IIS and for the
+   school's own Azure subscription
+9. **Later:** Canvas LTI 1.3, self-paced homework quizzes, Q&A with upvoting, the "I'm lost" signal,
    co-teaching and sharing, PowerPoint import
 
 ---
 
 ## 10. Open questions
 
-1. **School type:** K-12 or higher ed? If students may be under 13, COPPA applies, and some states
-   (for example California SOPIPA, New York Ed Law 2-d) add requirements for K-12.
-2. **Hosting:** the school's Azure subscription, or SpeakingInBits's?
-3. **App registration:** will the school's IT create a single-tenant app registration, or should we
-   use the multi-tenant app restricted to the school's tenant?
-4. **Instructor approval:** how does a signed-in user become an instructor? Options: an admin
-   approves them in the app, membership in an Entra security group, or an email allowlist.
-5. **Timed quizzes:** auto-advance per question (Kahoot style), or one overall time limit with
-   students working at their own pace?
-6. **Retention window:** is 24 hours of per-nickname results right, or should they be deleted the
+1. **Retention window:** is 24 hours of per-nickname results right, or should they be deleted the
    moment the session ends?
-7. **Presentations:** may students navigate back to earlier slides on their device, or stay locked to
+2. **Presentations:** may students navigate back to earlier slides on their device, or stay locked to
    the instructor's current slide?
+3. **Demo email:** which service sends confirmation and password-reset emails from the demo? Azure
+   Communication Services is the default assumption.
