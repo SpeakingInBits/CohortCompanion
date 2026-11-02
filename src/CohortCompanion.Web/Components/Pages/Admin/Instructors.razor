@@ -1,0 +1,182 @@
+@page "/admin/instructors"
+@attribute [Authorize(Roles = Roles.Admin)]
+@rendermode InteractiveServer
+
+@using System.Security.Claims
+@using System.Text
+@using Microsoft.AspNetCore.Identity
+@using Microsoft.AspNetCore.WebUtilities
+@using Microsoft.EntityFrameworkCore
+@using CohortCompanion.Web.Data
+
+@inject IDbContextFactory<ApplicationDbContext> DbFactory
+@inject IServiceScopeFactory ScopeFactory
+@inject NavigationManager NavigationManager
+@inject IJSRuntime JS
+
+<PageTitle>Instructors</PageTitle>
+
+<h1>Instructors</h1>
+<p class="text-secondary">
+    There is no email service yet, so password resets go through you: create a reset link and pass it on.
+    A reset link works once and expires after 24 hours.
+</p>
+
+@if (resetLink is not null)
+{
+    <div class="alert alert-info" role="status">
+        <div>Password reset link for <strong>@resetLink.Value.Name</strong>:</div>
+        <div class="input-group mt-2">
+            <input class="form-control font-monospace" readonly value="@resetLink.Value.Url" aria-label="Password reset link" />
+            <button type="button" class="btn btn-outline-secondary" @onclick="() => CopyAsync(resetLink.Value.Url)">Copy link</button>
+        </div>
+    </div>
+}
+
+@if (users is null)
+{
+    <p><em>Loading…</em></p>
+}
+else
+{
+    <div class="table-responsive">
+        <table class="table align-middle">
+            <thead>
+                <tr>
+                    <th>Name</th>
+                    <th>Email</th>
+                    <th>Roles</th>
+                    <th>Registered</th>
+                    <th>Invite</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var user in users)
+                {
+                    var roles = RolesFor(user.Id);
+                    var isInstructor = roles.Contains(Roles.Instructor);
+                    <tr>
+                        <td>@user.DisplayName</td>
+                        <td>@user.Email</td>
+                        <td>
+                            @foreach (var role in roles)
+                            {
+                                <span class="badge text-bg-primary me-1">@role</span>
+                            }
+                            @if (roles.Count == 0)
+                            {
+                                <span class="badge text-bg-light">No access</span>
+                            }
+                        </td>
+                        <td class="text-nowrap">@user.CreatedAtUtc.ToLocalTime().ToString("MMM d, yyyy")</td>
+                        <td>
+                            @if (user.InviteCode is not null)
+                            {
+                                <span class="font-monospace">@InviteCodes.Format(user.InviteCode.Code)</span>
+                                @if (user.InviteCode.Note is not null)
+                                {
+                                    <span class="text-secondary"> (@user.InviteCode.Note)</span>
+                                }
+                            }
+                        </td>
+                        <td class="text-nowrap">
+                            <button type="button" class="btn btn-sm btn-outline-secondary me-1" @onclick="() => CreateResetLinkAsync(user)">Reset link</button>
+                            @if (user.Id != currentUserId)
+                            {
+                                @if (isInstructor)
+                                {
+                                    <button type="button" class="btn btn-sm btn-outline-danger" @onclick="() => SetInstructorAsync(user, false)">Remove access</button>
+                                }
+                                else
+                                {
+                                    <button type="button" class="btn btn-sm btn-outline-success" @onclick="() => SetInstructorAsync(user, true)">Restore access</button>
+                                }
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+
+@code {
+    private List<ApplicationUser>? users;
+    private ILookup<string, string> rolesByUser = Enumerable.Empty<string>().ToLookup(_ => "");
+    private string? currentUserId;
+    private (string Name, string Url)? resetLink;
+
+    [CascadingParameter]
+    private Task<AuthenticationState> AuthenticationState { get; set; } = default!;
+
+    protected override async Task OnInitializedAsync()
+    {
+        currentUserId = (await AuthenticationState).User.FindFirstValue(ClaimTypes.NameIdentifier);
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        users = await db.Users
+            .AsNoTracking()
+            .Include(u => u.InviteCode)
+            .OrderBy(u => u.DisplayName)
+            .ToListAsync();
+
+        var roleRows = await (
+            from userRole in db.UserRoles
+            join role in db.Roles on userRole.RoleId equals role.Id
+            select new { userRole.UserId, role.Name })
+            .ToListAsync();
+        rolesByUser = roleRows.ToLookup(r => r.UserId, r => r.Name!);
+    }
+
+    private List<string> RolesFor(string userId) => rolesByUser[userId].Order().ToList();
+
+    // UserManager is resolved in a short-lived scope so its DbContext doesn't live as long as the circuit.
+    private async Task CreateResetLinkAsync(ApplicationUser user)
+    {
+        await using var scope = ScopeFactory.CreateAsyncScope();
+        var userManager = scope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>();
+        var tracked = await userManager.FindByIdAsync(user.Id);
+        if (tracked is null)
+        {
+            return;
+        }
+
+        var token = await userManager.GeneratePasswordResetTokenAsync(tracked);
+        var code = WebEncoders.Base64UrlEncode(Encoding.UTF8.GetBytes(token));
+        var url = NavigationManager.GetUriWithQueryParameters(
+            NavigationManager.ToAbsoluteUri("Account/ResetPassword").AbsoluteUri,
+            new Dictionary<string, object?> { ["code"] = code });
+        resetLink = (user.DisplayName, url);
+    }
+
+    private async Task SetInstructorAsync(ApplicationUser user, bool isInstructor)
+    {
+        await using var scope = ScopeFactory.CreateAsyncScope();
+        var userManager = scope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>();
+        var tracked = await userManager.FindByIdAsync(user.Id);
+        if (tracked is null)
+        {
+            return;
+        }
+
+        if (isInstructor)
+        {
+            await userManager.AddToRoleAsync(tracked, Roles.Instructor);
+        }
+        else
+        {
+            await userManager.RemoveFromRoleAsync(tracked, Roles.Instructor);
+        }
+
+        // Signs the user out of existing sessions at the next revalidation, so the role change takes effect.
+        await userManager.UpdateSecurityStampAsync(tracked);
+        await LoadAsync();
+    }
+
+    private async Task CopyAsync(string text) => await JS.InvokeVoidAsync("navigator.clipboard.writeText", text);
+}

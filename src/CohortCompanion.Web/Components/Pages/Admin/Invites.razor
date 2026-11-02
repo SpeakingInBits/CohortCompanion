@@ -1,0 +1,180 @@
+@page "/admin/invites"
+@attribute [Authorize(Roles = Roles.Admin)]
+@rendermode InteractiveServer
+
+@using System.ComponentModel.DataAnnotations
+@using System.Security.Claims
+@using CohortCompanion.Web.Data
+
+@inject InviteCodeService InviteCodeService
+@inject NavigationManager NavigationManager
+@inject TimeProvider TimeProvider
+@inject IJSRuntime JS
+
+<PageTitle>Invite codes</PageTitle>
+
+<h1>Invite codes</h1>
+<p class="text-secondary">
+    Everyone needs an invite code to register. Each person who registers with a code becomes an instructor.
+    Locking a code to an email, or keeping it to one use, stops a forwarded link from letting strangers in.
+</p>
+
+<div class="card mb-4" style="max-width: 40rem">
+    <div class="card-body">
+        <h2 class="h5 card-title">New invite code</h2>
+        <EditForm Model="form" OnValidSubmit="CreateAsync">
+            <DataAnnotationsValidator />
+            <div class="mb-3">
+                <label for="note" class="form-label">Note <span class="text-secondary">(optional)</span></label>
+                <InputText id="note" @bind-Value="form.Note" class="form-control" placeholder="Spring testers" />
+                <ValidationMessage For="() => form.Note" class="text-danger" />
+            </div>
+            <div class="mb-3">
+                <label for="email" class="form-label">Only for this email <span class="text-secondary">(optional)</span></label>
+                <InputText id="email" @bind-Value="form.LockedToEmail" class="form-control" placeholder="name@example.com" />
+                <ValidationMessage For="() => form.LockedToEmail" class="text-danger" />
+            </div>
+            <div class="row">
+                <div class="col mb-3">
+                    <label for="uses" class="form-label">Maximum uses</label>
+                    <InputNumber id="uses" @bind-Value="form.MaxUses" class="form-control" min="1" max="500" />
+                    <ValidationMessage For="() => form.MaxUses" class="text-danger" />
+                </div>
+                <div class="col mb-3">
+                    <label for="days" class="form-label">Expires in (days)</label>
+                    <InputNumber id="days" @bind-Value="form.ExpiresInDays" class="form-control" min="1" max="90" />
+                    <ValidationMessage For="() => form.ExpiresInDays" class="text-danger" />
+                </div>
+            </div>
+            <button type="submit" class="btn btn-primary">Create code</button>
+        </EditForm>
+
+        @if (created is not null)
+        {
+            <div class="alert alert-success mt-3 mb-0" role="status">
+                <div>Code <strong class="font-monospace fs-5">@InviteCodes.Format(created.Code)</strong> created.</div>
+                <div class="input-group mt-2">
+                    <input class="form-control font-monospace" readonly value="@RegisterLink(created)" aria-label="Invite link" />
+                    <button type="button" class="btn btn-outline-secondary" @onclick="() => CopyAsync(RegisterLink(created))">Copy link</button>
+                </div>
+            </div>
+        }
+    </div>
+</div>
+
+<h2 class="h4">All codes</h2>
+
+@if (invites is null)
+{
+    <p><em>Loading…</em></p>
+}
+else if (invites.Count == 0)
+{
+    <p>No invite codes yet.</p>
+}
+else
+{
+    <div class="table-responsive">
+        <table class="table align-middle">
+            <thead>
+                <tr>
+                    <th>Code</th>
+                    <th>Note</th>
+                    <th>Only for</th>
+                    <th>Uses</th>
+                    <th>Expires</th>
+                    <th>Status</th>
+                    <th>Redeemed by</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var invite in invites)
+                {
+                    var status = invite.GetStatus(now);
+                    <tr>
+                        <td class="font-monospace text-nowrap">@InviteCodes.Format(invite.Code)</td>
+                        <td>@invite.Note</td>
+                        <td>@invite.LockedToEmail</td>
+                        <td>@invite.UseCount / @invite.MaxUses</td>
+                        <td class="text-nowrap">@invite.ExpiresAtUtc.ToLocalTime().ToString("MMM d, yyyy")</td>
+                        <td><span class="badge @StatusBadge(status)">@status</span></td>
+                        <td>@string.Join(", ", invite.RedeemedBy.Select(u => u.DisplayName))</td>
+                        <td class="text-nowrap">
+                            @if (status == InviteCodeStatus.Active)
+                            {
+                                <button type="button" class="btn btn-sm btn-outline-secondary me-1" @onclick="() => CopyAsync(RegisterLink(invite))">Copy link</button>
+                                <button type="button" class="btn btn-sm btn-outline-danger" @onclick="() => RevokeAsync(invite.Id)">Revoke</button>
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+
+@code {
+    private List<InviteCode>? invites;
+    private InviteCode? created;
+    private NewInviteForm form = new();
+    private DateTime now;
+
+    [CascadingParameter]
+    private Task<AuthenticationState> AuthenticationState { get; set; } = default!;
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        now = TimeProvider.GetUtcNow().UtcDateTime;
+        invites = await InviteCodeService.ListAsync();
+    }
+
+    private async Task CreateAsync()
+    {
+        var user = (await AuthenticationState).User;
+        var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
+        created = await InviteCodeService.CreateAsync(userId, form.Note, form.LockedToEmail, form.MaxUses, form.ExpiresInDays);
+        form = new();
+        await LoadAsync();
+    }
+
+    private async Task RevokeAsync(int id)
+    {
+        await InviteCodeService.RevokeAsync(id);
+        if (created?.Id == id)
+        {
+            created = null;
+        }
+        await LoadAsync();
+    }
+
+    private string RegisterLink(InviteCode invite) =>
+        NavigationManager.ToAbsoluteUri($"Account/Register?invite={InviteCodes.Format(invite.Code)}").AbsoluteUri;
+
+    private async Task CopyAsync(string text) => await JS.InvokeVoidAsync("navigator.clipboard.writeText", text);
+
+    private static string StatusBadge(InviteCodeStatus status) => status switch
+    {
+        InviteCodeStatus.Active => "text-bg-success",
+        InviteCodeStatus.UsedUp => "text-bg-secondary",
+        _ => "text-bg-light",
+    };
+
+    private sealed class NewInviteForm
+    {
+        [StringLength(200)]
+        public string? Note { get; set; }
+
+        [EmailAddress]
+        [StringLength(256)]
+        public string? LockedToEmail { get; set; }
+
+        [Range(1, 500)]
+        public int MaxUses { get; set; } = 1;
+
+        [Range(1, 90)]
+        public int ExpiresInDays { get; set; } = InviteCodeService.DefaultExpiryDays;
+    }
+}

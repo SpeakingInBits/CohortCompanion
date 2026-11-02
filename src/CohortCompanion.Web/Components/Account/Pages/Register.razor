@@ -1,0 +1,187 @@
+﻿@page "/Account/Register"
+
+@using System.ComponentModel.DataAnnotations
+@using Microsoft.AspNetCore.Identity
+@using Microsoft.Extensions.Options
+@using CohortCompanion.Web.Auth
+@using CohortCompanion.Web.Data
+
+@inject UserManager<ApplicationUser> UserManager
+@inject IUserStore<ApplicationUser> UserStore
+@inject SignInManager<ApplicationUser> SignInManager
+@inject InviteCodeService InviteCodeService
+@inject IOptions<AuthOptions> AuthOptions
+@inject TimeProvider TimeProvider
+@inject ILogger<Register> Logger
+@inject IdentityRedirectManager RedirectManager
+
+<PageTitle>Register</PageTitle>
+
+<h1>Register</h1>
+
+<div class="row">
+    <div class="col-lg-6">
+        <StatusMessage Message="@Message" />
+        <EditForm Model="Input" method="post" OnValidSubmit="RegisterUser" FormName="register">
+            <DataAnnotationsValidator />
+            <h2>Create an instructor account.</h2>
+            <p class="text-secondary">You need an invite code from an administrator to register.</p>
+            <hr />
+            <ValidationSummary class="text-danger" role="alert" />
+            <div class="form-floating mb-3">
+                <InputText @bind-Value="Input.InviteCode" id="Input.InviteCode" class="form-control text-uppercase" autocomplete="off" placeholder="ABCD-1234" />
+                <label for="Input.InviteCode">Invite code</label>
+                <ValidationMessage For="() => Input.InviteCode" class="text-danger" />
+            </div>
+            <div class="form-floating mb-3">
+                <InputText @bind-Value="Input.DisplayName" id="Input.DisplayName" class="form-control" autocomplete="name" aria-required="true" placeholder="Your name" />
+                <label for="Input.DisplayName">Your name</label>
+                <ValidationMessage For="() => Input.DisplayName" class="text-danger" />
+            </div>
+            <div class="form-floating mb-3">
+                <InputText @bind-Value="Input.Email" id="Input.Email" class="form-control" autocomplete="username" aria-required="true" placeholder="name@example.com" />
+                <label for="Input.Email">Email</label>
+                <ValidationMessage For="() => Input.Email" class="text-danger" />
+            </div>
+            <div class="form-floating mb-3">
+                <InputText type="password" @bind-Value="Input.Password" id="Input.Password" class="form-control" autocomplete="new-password" aria-required="true" placeholder="password" />
+                <label for="Input.Password">Password</label>
+                <ValidationMessage For="() => Input.Password" class="text-danger" />
+            </div>
+            <div class="form-floating mb-3">
+                <InputText type="password" @bind-Value="Input.ConfirmPassword" id="Input.ConfirmPassword" class="form-control" autocomplete="new-password" aria-required="true" placeholder="password" />
+                <label for="Input.ConfirmPassword">Confirm Password</label>
+                <ValidationMessage For="() => Input.ConfirmPassword" class="text-danger" />
+            </div>
+            <button type="submit" class="w-100 btn btn-lg btn-primary">Register</button>
+        </EditForm>
+    </div>
+</div>
+
+@code {
+    private string? errorMessage;
+    private IEnumerable<IdentityError>? identityErrors;
+
+    [SupplyParameterFromForm]
+    private InputModel Input { get; set; } = default!;
+
+    [SupplyParameterFromQuery]
+    private string? ReturnUrl { get; set; }
+
+    [SupplyParameterFromQuery(Name = "invite")]
+    private string? Invite { get; set; }
+
+    private string? Message =>
+        errorMessage is not null ? $"Error: {errorMessage}"
+        : identityErrors is not null ? $"Error: {string.Join(", ", identityErrors.Select(error => error.Description))}"
+        : null;
+
+    protected override void OnInitialized()
+    {
+        // Input is null on GET; prefill the code from an invite link.
+        Input ??= new() { InviteCode = InviteCodes.Format(InviteCodes.Normalize(Invite)) };
+    }
+
+    public async Task RegisterUser(EditContext editContext)
+    {
+        var isBootstrapAdmin = await IsBootstrapAdminAsync(Input.Email);
+        int? inviteCodeId = null;
+
+        if (!isBootstrapAdmin)
+        {
+            if (string.IsNullOrWhiteSpace(Input.InviteCode))
+            {
+                errorMessage = "An invite code is required.";
+                return;
+            }
+
+            var (result, id) = await InviteCodeService.TryRedeemAsync(Input.InviteCode, Input.Email);
+            if (result != InviteCodeCheck.Ok)
+            {
+                errorMessage = InviteCodeService.Describe(result);
+                return;
+            }
+
+            inviteCodeId = id;
+        }
+
+        var user = new ApplicationUser
+        {
+            DisplayName = Input.DisplayName.Trim(),
+            CreatedAtUtc = TimeProvider.GetUtcNow().UtcDateTime,
+            InviteCodeId = inviteCodeId,
+        };
+
+        await UserStore.SetUserNameAsync(user, Input.Email, CancellationToken.None);
+        await GetEmailStore().SetEmailAsync(user, Input.Email, CancellationToken.None);
+        var createResult = await UserManager.CreateAsync(user, Input.Password);
+
+        if (!createResult.Succeeded)
+        {
+            if (inviteCodeId is int usedId)
+            {
+                await InviteCodeService.ReleaseAsync(usedId);
+            }
+
+            identityErrors = createResult.Errors;
+            return;
+        }
+
+        string[] roles = isBootstrapAdmin ? [Roles.Admin, Roles.Instructor] : [Roles.Instructor];
+        await UserManager.AddToRolesAsync(user, roles);
+
+        Logger.LogInformation("Instructor account created (admin: {IsAdmin}).", isBootstrapAdmin);
+
+        await SignInManager.SignInAsync(user, isPersistent: false);
+        RedirectManager.RedirectTo(ReturnUrl);
+    }
+
+    private async Task<bool> IsBootstrapAdminAsync(string email)
+    {
+        var bootstrapEmail = AuthOptions.Value.BootstrapAdminEmail;
+        if (string.IsNullOrWhiteSpace(bootstrapEmail)
+            || InviteCodes.NormalizeEmail(bootstrapEmail) != InviteCodes.NormalizeEmail(email))
+        {
+            return false;
+        }
+
+        // Only until the first admin exists; after that the bootstrap email needs an invite like everyone else.
+        return (await UserManager.GetUsersInRoleAsync(Roles.Admin)).Count == 0;
+    }
+
+    private IUserEmailStore<ApplicationUser> GetEmailStore()
+    {
+        if (!UserManager.SupportsUserEmail)
+        {
+            throw new NotSupportedException("The default UI requires a user store with email support.");
+        }
+        return (IUserEmailStore<ApplicationUser>)UserStore;
+    }
+
+    private sealed class InputModel
+    {
+        [Display(Name = "Invite code")]
+        public string InviteCode { get; set; } = "";
+
+        [Required]
+        [StringLength(100)]
+        [Display(Name = "Your name")]
+        public string DisplayName { get; set; } = "";
+
+        [Required]
+        [EmailAddress]
+        [Display(Name = "Email")]
+        public string Email { get; set; } = "";
+
+        [Required]
+        [StringLength(100, ErrorMessage = "The {0} must be at least {2} and at max {1} characters long.", MinimumLength = 6)]
+        [DataType(DataType.Password)]
+        [Display(Name = "Password")]
+        public string Password { get; set; } = "";
+
+        [DataType(DataType.Password)]
+        [Display(Name = "Confirm password")]
+        [Compare("Password", ErrorMessage = "The password and confirmation password do not match.")]
+        public string ConfirmPassword { get; set; } = "";
+    }
+}

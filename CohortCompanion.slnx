@@ -1,0 +1,10 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/CohortCompanion.Shared/CohortCompanion.Shared.csproj" />
+    <Project Path="src/CohortCompanion.Web.Client/CohortCompanion.Web.Client.csproj" />
+    <Project Path="src/CohortCompanion.Web/CohortCompanion.Web.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/CohortCompanion.Tests/CohortCompanion.Tests.csproj" />
+  </Folder>
+</Solution>
