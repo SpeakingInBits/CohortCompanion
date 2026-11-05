@@ -66,6 +66,13 @@ public sealed partial class LiveSessionManager(
     private readonly ConcurrentDictionary<string, Guid> sessionByTokenHash = new();
     private readonly ConcurrentDictionary<string, (Guid Session, Guid? Participant)> connections = new();
 
+    /// <summary>
+    /// Batch writes from different classes take turns. Run together they deadlock in SQL Server, and detecting
+    /// a deadlock takes seconds, while each write on its own takes milliseconds. Always taken after a session's
+    /// lock, never before it.
+    /// </summary>
+    private readonly SemaphoreSlim batchWrites = new(1, 1);
+
     /// <summary>Raised when a session's host view changed. The argument is the session id.</summary>
     public event Action<Guid>? HostViewChanged;
 
@@ -509,8 +516,11 @@ public sealed partial class LiveSessionManager(
     {
         var now = UtcNow;
 
-        await using (var strategyContext = await dbFactory.CreateDbContextAsync())
+        await batchWrites.WaitAsync();
+        try
         {
+            await using var strategyContext = await dbFactory.CreateDbContextAsync();
+
             // All or nothing, and safe to retry after a transient Azure SQL failure: each attempt starts clean.
             await strategyContext.Database.CreateExecutionStrategy().ExecuteAsync(async () =>
             {
@@ -518,15 +528,19 @@ public sealed partial class LiveSessionManager(
                 await using var transaction = await db.Database.BeginTransactionAsync();
                 db.SessionSummaries.AddRange(BuildSummaries(runtime));
                 await db.SaveChangesAsync();
-            // Responses go with their participants through the cascade.
-            await db.Participants.Where(p => p.LiveSessionId == runtime.Id).ExecuteDeleteAsync();
-            await db.LiveSessions.Where(s => s.Id == runtime.Id).ExecuteUpdateAsync(s => s
-                .SetProperty(x => x.Status, SessionStatus.Ended)
-                .SetProperty(x => x.EndedAtUtc, now)
-                .SetProperty(x => x.LastActivityUtc, now)
-                .SetProperty(x => x.PhaseDeadlineUtc, (DateTime?)null));
+                // Responses go with their participants through the cascade.
+                await db.Participants.Where(p => p.LiveSessionId == runtime.Id).ExecuteDeleteAsync();
+                await db.LiveSessions.Where(s => s.Id == runtime.Id).ExecuteUpdateAsync(s => s
+                    .SetProperty(x => x.Status, SessionStatus.Ended)
+                    .SetProperty(x => x.EndedAtUtc, now)
+                    .SetProperty(x => x.LastActivityUtc, now)
+                    .SetProperty(x => x.PhaseDeadlineUtc, (DateTime?)null));
                 await transaction.CommitAsync();
             });
+        }
+        finally
+        {
+            batchWrites.Release();
         }
 
         runtime.Status = SessionStatus.Ended;
@@ -700,7 +714,15 @@ public sealed partial class LiveSessionManager(
             }
         }
 
-        await db.SaveChangesAsync();
+        await batchWrites.WaitAsync();
+        try
+        {
+            await db.SaveChangesAsync();
+        }
+        finally
+        {
+            batchWrites.Release();
+        }
 
         foreach (var response in runtime.Responses.Values)
         {
@@ -797,50 +819,65 @@ public sealed partial class LiveSessionManager(
 
     // ---- Background tick ----
 
-    /// <summary>Runs a few times a second: enforces deadlines and pushes throttled updates.</summary>
-    public async Task TickAsync()
+    /// <summary>
+    /// Runs a few times a second: enforces deadlines and pushes throttled updates. Sessions tick independently,
+    /// so a class that's slow, say waiting on the database, can't hold up another class's timers. A session
+    /// that's busy is skipped, and the next tick comes along a moment later.
+    /// </summary>
+    public Task TickAsync()
     {
+        var ticks = new List<Task>();
         foreach (var runtime in sessions.Values)
         {
-            var changed = false;
-            await runtime.Gate.WaitAsync();
-            try
+            if (runtime.Gate.Wait(0))
             {
-                if (runtime.Status == SessionStatus.Ended)
-                {
-                    continue;
-                }
-
-                var now = UtcNow;
-                if (now - runtime.LastActivityUtc >= AbandonedAfter)
-                {
-                    await FinishAsync(runtime);
-                    logger.LogInformation("Ended abandoned session {SessionId}.", runtime.Id);
-                    changed = true;
-                    continue;
-                }
-
-                changed = await AdvanceTimersAsync(runtime, now);
-
-                if (runtime.ViewsAreStale && now - runtime.LastViewPushUtc >= ViewPushInterval)
-                {
-                    await PushViewsAsync(runtime);
-                }
-
-                if (runtime.HasUnsavedResponses && now - runtime.LastPersistUtc >= PersistInterval)
-                {
-                    await PersistAsync(runtime);
-                }
+                ticks.Add(TickSessionAsync(runtime));
             }
-            catch (Exception exception)
+        }
+
+        return Task.WhenAll(ticks);
+    }
+
+    /// <summary>Called holding the session's lock, which it releases.</summary>
+    private async Task TickSessionAsync(LiveRuntime runtime)
+    {
+        var changed = false;
+        try
+        {
+            var now = UtcNow;
+            if (runtime.Status == SessionStatus.Ended)
             {
-                // Log only the session id: never answer content or nicknames.
-                logger.LogError(exception, "Tick failed for session {SessionId}.", runtime.Id);
+                return;
             }
-            finally
+
+            if (now - runtime.LastActivityUtc >= AbandonedAfter)
             {
-                runtime.Gate.Release();
+                await FinishAsync(runtime);
+                logger.LogInformation("Ended abandoned session {SessionId}.", runtime.Id);
+                changed = true;
+                return;
             }
+
+            changed = await AdvanceTimersAsync(runtime, now);
+
+            if (runtime.ViewsAreStale && now - runtime.LastViewPushUtc >= ViewPushInterval)
+            {
+                await PushViewsAsync(runtime);
+            }
+
+            if (runtime.HasUnsavedResponses && now - runtime.LastPersistUtc >= PersistInterval)
+            {
+                await PersistAsync(runtime);
+            }
+        }
+        catch (Exception exception)
+        {
+            // Log only the session id: never answer content or nicknames.
+            logger.LogError(exception, "Tick failed for session {SessionId}.", runtime.Id);
+        }
+        finally
+        {
+            runtime.Gate.Release();
 
             if (changed)
             {
@@ -867,7 +904,9 @@ public sealed class LiveSessionTicker(LiveSessionManager manager, ILogger<LiveSe
         using var timer = new PeriodicTimer(TimeSpan.FromMilliseconds(250));
         while (await timer.WaitForNextTickAsync(stoppingToken))
         {
-            await manager.TickAsync();
+            // Not awaited, so one slow session can't delay the next tick for the others. Each session
+            // handles its own errors, and one that's still busy is skipped.
+            _ = manager.TickAsync();
         }
     }
 }

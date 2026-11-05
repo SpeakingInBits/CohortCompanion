@@ -12,14 +12,14 @@ namespace CohortCompanion.Web.Live;
 public sealed class LiveRateLimiter : IDisposable
 {
     public const int JoinsPerConnection = 10;
-    public const int JoinsPerAddress = 1000;
+    public const int JoinsPerAddress = 3000;
 
     // Rejoining has its own, larger allowance: when Wi-Fi drops, a whole lecture comes back in the same few
     // seconds, often just after joining. It also needs a valid token, so there's little for a limit to protect.
     public const int RejoinsPerConnection = 10;
     public const int RejoinsPerAddress = 10_000;
     public const int AnswersPerConnection = 30;
-    public const int AnswersPerAddress = 5000;
+    public const int AnswersPerAddress = 20_000;
 
     private static readonly TimeSpan Window = TimeSpan.FromMinutes(1);
 

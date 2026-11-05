@@ -71,6 +71,34 @@ public sealed class AbandonedSessionTests : LiveSessionTestBase
     }
 }
 
+public sealed class SessionIsolationTests : LiveSessionTestBase
+{
+    [Fact]
+    public async Task OneStuckClass_DoesNotDelayAnotherClassesTimer()
+    {
+        var (stuck, _) = await RunningSessionAsync(SampleQuiz());
+        var (other, _) = await RunningSessionAsync(SampleQuiz(MultipleChoice(timeLimit: 10)));
+        await Manager.OpenQuestionAsync(other, HostId);
+
+        // A command for the first class hangs while holding that class's lock.
+        var release = new TaskCompletionSource();
+        Broadcaster.Hold = (stuck, release.Task);
+        var hung = Manager.OpenQuestionAsync(stuck, HostId);
+
+        Time.Advance(TimeSpan.FromSeconds(11));
+        var tick = Manager.TickAsync();
+        var finished = await Task.WhenAny(tick, Task.Delay(TimeSpan.FromSeconds(5)));
+
+        Broadcaster.Hold = null;
+        release.SetResult();
+        await hung;
+        await tick;
+
+        Assert.Same(tick, finished);
+        Assert.Equal(QuestionPhase.Closed, (await Manager.GetHostViewAsync(other, HostId))!.Phase);
+    }
+}
+
 public sealed class LargeClassTests : LiveSessionTestBase
 {
     /// <summary>
