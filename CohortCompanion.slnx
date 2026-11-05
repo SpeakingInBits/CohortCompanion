@@ -5,6 +5,7 @@
     <Project Path="src/CohortCompanion.Web/CohortCompanion.Web.csproj" />
   </Folder>
   <Folder Name="/tests/">
+    <Project Path="tests/CohortCompanion.LoadTest/CohortCompanion.LoadTest.csproj" />
     <Project Path="tests/CohortCompanion.Tests/CohortCompanion.Tests.csproj" />
   </Folder>
 </Solution>
