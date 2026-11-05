@@ -1,0 +1,100 @@
+@* Totals for one question. Used by the host page, the projector, and student devices. *@
+
+@if (Results.Options is { } options)
+{
+    var total = Math.Max(1, Results.ResponseCount);
+    @foreach (var option in options)
+    {
+        <div class="result-row @(option.IsCorrect == true ? "is-correct" : "")">
+            <div class="d-flex justify-content-between gap-2">
+                <span>
+                    @if (option.IsCorrect == true)
+                    {
+                        <span aria-label="Correct answer">✓ </span>
+                    }
+                    @option.Text
+                </span>
+                <span>@option.Count</span>
+            </div>
+            @if (!string.IsNullOrEmpty(option.CodeSnippet))
+            {
+                <code>@option.CodeSnippet</code>
+            }
+            <div class="result-bar"><div style="width: @(option.Count * 100 / total)%"></div></div>
+        </div>
+    }
+}
+else if (Results.Words is { } words)
+{
+    @if (words.Count == 0)
+    {
+        <p class="text-secondary">No words yet.</p>
+    }
+    else
+    {
+        var largest = words.Max(w => w.Count);
+        <div class="word-cloud">
+            @foreach (var word in words)
+            {
+                <span style="font-size: @(FontSize(word.Count, largest))em">
+                    @word.Word
+                    @if (OnHide.HasDelegate)
+                    {
+                        <button type="button" class="btn btn-sm btn-link p-0 ms-1" aria-label="Hide @word.Word" @onclick="() => OnHide.InvokeAsync(word.Word)">✕</button>
+                    }
+                </span>
+            }
+        </div>
+    }
+}
+else if (Results.Blanks is { } blanks)
+{
+    @foreach (var blank in blanks)
+    {
+        var total = Math.Max(1, blank.Answers.Sum(a => a.Count));
+        <h3 class="h6 mt-3">Blank @blank.Blank</h3>
+        @if (blank.Answers.Count == 0)
+        {
+            <p class="text-secondary">No answers.</p>
+        }
+        @foreach (var answer in blank.Answers)
+        {
+            <div class="result-row @(answer.IsAccepted == true ? "is-correct" : "")">
+                <div class="d-flex justify-content-between gap-2">
+                    <span>
+                        @if (answer.IsAccepted == true)
+                        {
+                            <span aria-label="Accepted answer">✓ </span>
+                        }
+                        @answer.Text
+                    </span>
+                    <span>
+                        @if (OnHide.HasDelegate)
+                        {
+                            <button type="button" class="btn btn-sm btn-link p-0 me-2" @onclick="() => OnHide.InvokeAsync(answer.Text)">Hide</button>
+                        }
+                        @if (OnAccept.HasDelegate && answer.IsAccepted != true)
+                        {
+                            <button type="button" class="btn btn-sm btn-link p-0 me-2" @onclick="() => OnAccept.InvokeAsync((blank.Blank, answer.Text))">Accept</button>
+                        }
+                        @answer.Count
+                    </span>
+                </div>
+                <div class="result-bar"><div style="width: @(answer.Count * 100 / total)%"></div></div>
+            </div>
+        }
+    }
+}
+
+@code {
+    [Parameter, EditorRequired] public QuestionResults Results { get; set; } = default!;
+
+    /// <summary>Set on the host page, to hide a word or an answer from the class.</summary>
+    [Parameter] public EventCallback<string> OnHide { get; set; }
+
+    /// <summary>Set on the host page, to mark a common answer as accepted.</summary>
+    [Parameter] public EventCallback<(int Blank, string Text)> OnAccept { get; set; }
+
+    private static string FontSize(int count, int largest) =>
+        (1 + 2.2 * count / largest).ToString("0.00", System.Globalization.CultureInfo.InvariantCulture);
+}

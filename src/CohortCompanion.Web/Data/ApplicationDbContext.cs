@@ -11,9 +11,57 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
 
     public DbSet<Question> Questions => Set<Question>();
 
+    public DbSet<LiveSession> LiveSessions => Set<LiveSession>();
+
+    public DbSet<Participant> Participants => Set<Participant>();
+
+    public DbSet<Response> Responses => Set<Response>();
+
+    public DbSet<SessionSummary> SessionSummaries => Set<SessionSummary>();
+
     protected override void OnModelCreating(ModelBuilder builder)
     {
         base.OnModelCreating(builder);
+
+        builder.Entity<LiveSession>(session =>
+        {
+            session.Property(s => s.JoinCode).HasMaxLength(6);
+            session.Property(s => s.Title).HasMaxLength(200);
+            // A code is only reserved while its session is live. 2 is SessionStatus.Ended.
+            session.HasIndex(s => s.JoinCode).IsUnique().HasFilter("[Status] <> 2");
+            session.HasIndex(s => new { s.HostId, s.Status });
+            session.HasOne(s => s.Host)
+                .WithMany()
+                .HasForeignKey(s => s.HostId)
+                .OnDelete(DeleteBehavior.Restrict);
+            session.HasMany(s => s.Participants)
+                .WithOne()
+                .HasForeignKey(p => p.LiveSessionId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        builder.Entity<Participant>(participant =>
+        {
+            participant.Property(p => p.Nickname).HasMaxLength(20);
+            participant.Property(p => p.TokenHash).HasMaxLength(64);
+            participant.HasIndex(p => p.TokenHash);
+            participant.HasMany(p => p.Responses)
+                .WithOne()
+                .HasForeignKey(r => r.ParticipantId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        builder.Entity<Response>(response => response.HasIndex(r => new { r.ParticipantId, r.QuestionId }).IsUnique());
+
+        builder.Entity<SessionSummary>(summary =>
+        {
+            summary.Property(s => s.PromptText).HasMaxLength(500);
+            summary.HasIndex(s => s.LiveSessionId);
+            summary.HasOne<LiveSession>()
+                .WithMany()
+                .HasForeignKey(s => s.LiveSessionId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
 
         builder.Entity<Quiz>(quiz =>
         {

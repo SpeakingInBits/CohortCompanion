@@ -212,6 +212,109 @@ namespace CohortCompanion.Web.Data.Migrations
                     b.ToTable("InviteCodes");
                 });
 
+            modelBuilder.Entity("CohortCompanion.Web.Data.LiveSession", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("CurrentIndex")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("EndedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("HostId")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<string>("JoinCode")
+                        .IsRequired()
+                        .HasMaxLength(6)
+                        .HasColumnType("nvarchar(6)");
+
+                    b.Property<int>("Kind")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("LastActivityUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("Phase")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("PhaseDeadlineUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int?>("QuizId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("RuntimeJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("SnapshotJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTime?>("StartedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("JoinCode")
+                        .IsUnique()
+                        .HasFilter("[Status] <> 2");
+
+                    b.HasIndex("HostId", "Status");
+
+                    b.ToTable("LiveSessions");
+                });
+
+            modelBuilder.Entity("CohortCompanion.Web.Data.Participant", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<bool>("IsRemoved")
+                        .HasColumnType("bit");
+
+                    b.Property<DateTime>("JoinedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid>("LiveSessionId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Nickname")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<string>("TokenHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("LiveSessionId");
+
+                    b.HasIndex("TokenHash");
+
+                    b.ToTable("Participants");
+                });
+
             modelBuilder.Entity("CohortCompanion.Web.Data.Question", b =>
                 {
                     b.Property<int>("Id")
@@ -312,6 +415,75 @@ namespace CohortCompanion.Web.Data.Migrations
                     b.HasIndex("OwnerId");
 
                     b.ToTable("Quizzes");
+                });
+
+            modelBuilder.Entity("CohortCompanion.Web.Data.Response", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("ElapsedMs")
+                        .HasColumnType("int");
+
+                    b.Property<bool?>("IsCorrect")
+                        .HasColumnType("bit");
+
+                    b.Property<Guid>("ParticipantId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Payload")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<int>("QuestionId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("Score")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("SubmittedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ParticipantId", "QuestionId")
+                        .IsUnique();
+
+                    b.ToTable("Responses");
+                });
+
+            modelBuilder.Entity("CohortCompanion.Web.Data.SessionSummary", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("AggregateJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<Guid>("LiveSessionId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("ParticipantCount")
+                        .HasColumnType("int");
+
+                    b.Property<string>("PromptText")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<int>("QuestionIndex")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("LiveSessionId");
+
+                    b.ToTable("SessionSummaries");
                 });
 
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityRole", b =>
@@ -507,6 +679,26 @@ namespace CohortCompanion.Web.Data.Migrations
                     b.Navigation("CreatedBy");
                 });
 
+            modelBuilder.Entity("CohortCompanion.Web.Data.LiveSession", b =>
+                {
+                    b.HasOne("CohortCompanion.Web.Data.ApplicationUser", "Host")
+                        .WithMany()
+                        .HasForeignKey("HostId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Host");
+                });
+
+            modelBuilder.Entity("CohortCompanion.Web.Data.Participant", b =>
+                {
+                    b.HasOne("CohortCompanion.Web.Data.LiveSession", null)
+                        .WithMany("Participants")
+                        .HasForeignKey("LiveSessionId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("CohortCompanion.Web.Data.Question", b =>
                 {
                     b.HasOne("CohortCompanion.Web.Data.Quiz", null)
@@ -525,6 +717,24 @@ namespace CohortCompanion.Web.Data.Migrations
                         .IsRequired();
 
                     b.Navigation("Owner");
+                });
+
+            modelBuilder.Entity("CohortCompanion.Web.Data.Response", b =>
+                {
+                    b.HasOne("CohortCompanion.Web.Data.Participant", null)
+                        .WithMany("Responses")
+                        .HasForeignKey("ParticipantId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("CohortCompanion.Web.Data.SessionSummary", b =>
+                {
+                    b.HasOne("CohortCompanion.Web.Data.LiveSession", null)
+                        .WithMany()
+                        .HasForeignKey("LiveSessionId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityRoleClaim<string>", b =>
@@ -632,6 +842,16 @@ namespace CohortCompanion.Web.Data.Migrations
             modelBuilder.Entity("CohortCompanion.Web.Data.InviteCode", b =>
                 {
                     b.Navigation("RedeemedBy");
+                });
+
+            modelBuilder.Entity("CohortCompanion.Web.Data.LiveSession", b =>
+                {
+                    b.Navigation("Participants");
+                });
+
+            modelBuilder.Entity("CohortCompanion.Web.Data.Participant", b =>
+                {
+                    b.Navigation("Responses");
                 });
 
             modelBuilder.Entity("CohortCompanion.Web.Data.Question", b =>

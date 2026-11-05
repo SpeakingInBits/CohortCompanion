@@ -1,0 +1,156 @@
+@page "/projector/{SessionId:guid}"
+@layout LiveLayout
+@rendermode @(new InteractiveWebAssemblyRenderMode(prerender: false))
+
+@using CohortCompanion.Web.Client.Live
+@using Microsoft.AspNetCore.SignalR.Client
+
+@implements IAsyncDisposable
+@inject NavigationManager Navigation
+
+<main class="live-shell projector">
+    @if (message is not null)
+    {
+        <h1 class="text-center mt-5">@message</h1>
+    }
+    else if (view is null)
+    {
+        <p class="text-secondary text-center mt-5" role="status">Connecting…</p>
+    }
+    else if (view.Phase.Status == SessionStatus.Lobby)
+    {
+        <div class="row align-items-center">
+            <div class="col-md-7 text-center">
+                <h1>@view.Title</h1>
+                <p class="mb-1">Go to <strong>@JoinHost/join</strong> and enter</p>
+                <div class="join-code">@view.JoinCode</div>
+                <p class="mt-3">@view.ParticipantCount joined</p>
+            </div>
+            <div class="col-md-5 text-center">
+                <img class="qr-code" src="qr/@(view.JoinCode).svg" alt="QR code to join" />
+            </div>
+        </div>
+        <div class="mt-4 text-center">
+            @foreach (var name in view.Nicknames)
+            {
+                <span class="nickname-chip">@name</span>
+            }
+        </div>
+    }
+    else if (view.Phase.Phase == QuestionPhase.Finished)
+    {
+        <h1 class="text-center mt-5">That's the end of the quiz</h1>
+    }
+    else if (view.Phase.Question is { } question)
+    {
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <span class="text-secondary">Question @(view.Phase.QuestionIndex + 1) of @view.Phase.QuestionCount</span>
+            <span class="d-flex align-items-center gap-4">
+                @if (view.Phase.Phase == QuestionPhase.Open)
+                {
+                    <span>@view.ResponseCount of @view.ParticipantCount answered</span>
+                    @if (RemainingSeconds is { } seconds)
+                    {
+                        <span class="live-timer" role="timer">@(view.Phase.IsPaused ? "Paused" : $"{seconds}s")</span>
+                    }
+                }
+                <span>Join: <strong>@view.JoinCode</strong></span>
+            </span>
+        </div>
+
+        <QuestionView Question="question" />
+
+        @if (view.Phase.Results is { } results)
+        {
+            <ResultsView Results="results" />
+        }
+        else if (question.Options.Count > 0)
+        {
+            <ol type="A">
+                @foreach (var option in question.Options)
+                {
+                    <li>@option.Text</li>
+                }
+            </ol>
+        }
+    }
+</main>
+
+@code {
+    [Parameter] public Guid SessionId { get; set; }
+
+    private HubConnection? hub;
+    private ProjectorState? view;
+    private string? message;
+    private DateTime? deadlineUtc;
+    private Timer? countdown;
+
+    private string JoinHost => new Uri(Navigation.BaseUri).Authority;
+
+    private int? RemainingSeconds => view?.Phase.IsPaused == true
+        ? (view.Phase.RemainingMs ?? 0) / 1000
+        : deadlineUtc is { } deadline ? (int)Math.Ceiling(Math.Max(0, (deadline - DateTime.UtcNow).TotalSeconds)) : null;
+
+    protected override async Task OnInitializedAsync()
+    {
+        hub = new HubConnectionBuilder()
+            .WithUrl(Navigation.ToAbsoluteUri(HubEvents.HubPath))
+            .WithAutomaticReconnect(new ForeverRetryPolicy())
+            .Build();
+
+        hub.On<ProjectorState>(HubEvents.ProjectorUpdated, update => InvokeAsync(() => Apply(update)));
+        hub.On<object?>(HubEvents.SessionEnded, _ => InvokeAsync(() =>
+        {
+            message = "This session has ended";
+            StateHasChanged();
+        }));
+        hub.Reconnected += _ => InvokeAsync(WatchAsync);
+
+        countdown = new Timer(_ => InvokeAsync(() =>
+        {
+            if (deadlineUtc is not null)
+            {
+                StateHasChanged();
+            }
+        }), null, TimeSpan.FromMilliseconds(500), TimeSpan.FromMilliseconds(500));
+
+        try
+        {
+            await hub.StartAsync();
+            await WatchAsync();
+        }
+        catch (Exception)
+        {
+            message = "Couldn't connect. Sign in as the instructor running this session, then reload.";
+        }
+    }
+
+    private async Task WatchAsync()
+    {
+        var state = await hub!.InvokeAsync<ProjectorState?>("WatchProjector", SessionId);
+        if (state is null)
+        {
+            message = "This session isn't running.";
+            StateHasChanged();
+            return;
+        }
+
+        Apply(state);
+    }
+
+    private void Apply(ProjectorState state)
+    {
+        view = state;
+        deadlineUtc = state.Phase.Phase == QuestionPhase.Open && state.Phase.RemainingMs is { } ms ? DateTime.UtcNow.AddMilliseconds(ms) : null;
+        StateHasChanged();
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        countdown?.Dispose();
+        if (hub is not null)
+        {
+            await hub.DisposeAsync();
+        }
+    }
+}

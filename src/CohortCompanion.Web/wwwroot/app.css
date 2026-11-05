@@ -74,3 +74,84 @@ h1:focus {
 .form-check-input {
     border-color: #929292;
 }
+
+/* Live pages: student devices and the projector */
+.live-shell {
+    min-height: 100vh;
+    max-width: 40rem;
+    margin: 0 auto;
+    padding: 1rem;
+}
+
+.live-shell.projector {
+    max-width: none;
+    padding: 2rem 3rem;
+    font-size: 1.6rem;
+}
+
+.live-timer {
+    font-variant-numeric: tabular-nums;
+    font-weight: 700;
+}
+
+.join-code {
+    font-size: 4rem;
+    font-weight: 700;
+    letter-spacing: 0.15em;
+    font-variant-numeric: tabular-nums;
+}
+
+.qr-code {
+    width: 16rem;
+    max-width: 100%;
+    background: #fff;
+}
+
+.result-row {
+    margin-bottom: 0.6rem;
+}
+
+.result-bar {
+    height: 1.4rem;
+    border-radius: 0.25rem;
+    background: var(--bs-secondary-bg);
+    overflow: hidden;
+}
+
+.result-bar > div {
+    height: 100%;
+    background: #1b6ec2;
+    transition: width 0.3s ease;
+}
+
+.result-row.is-correct .result-bar > div {
+    background: #198754;
+}
+
+.word-cloud {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
+    gap: 0.4rem 1rem;
+    padding: 1rem;
+}
+
+.nickname-chip {
+    display: inline-block;
+    padding: 0.15rem 0.7rem;
+    margin: 0.2rem;
+    border-radius: 1rem;
+    background: var(--bs-secondary-bg);
+}
+
+.option-choice {
+    display: block;
+    width: 100%;
+    text-align: start;
+    margin-bottom: 0.5rem;
+}
+
+.prompt p:last-child {
+    margin-bottom: 0;
+}
