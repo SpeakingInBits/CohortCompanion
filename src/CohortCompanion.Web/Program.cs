@@ -1,10 +1,13 @@
 using Microsoft.AspNetCore.Components.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
+using Radzen;
 using CohortCompanion.Web.Auth;
 using CohortCompanion.Web.Components;
 using CohortCompanion.Web.Components.Account;
+using CohortCompanion.Web.Content;
 using CohortCompanion.Web.Data;
+using CohortCompanion.Web.Quizzes;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -48,6 +51,10 @@ builder.Services.AddSingleton<IEmailSender<ApplicationUser>, IdentityNoOpEmailSe
 builder.Services.Configure<AuthOptions>(builder.Configuration.GetSection(AuthOptions.SectionName));
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddScoped<InviteCodeService>();
+
+builder.Services.AddRadzenComponents();
+builder.Services.AddSingleton<ContentSanitizer>();
+builder.Services.AddScoped<QuizService>();
 
 var app = builder.Build();
 

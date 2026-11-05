@@ -1,0 +1,199 @@
+@using CohortCompanion.Shared
+@using CohortCompanion.Web.Client.Components
+@using CohortCompanion.Web.Components.Shared
+@using CohortCompanion.Web.Data
+@using CohortCompanion.Web.Quizzes
+
+<div class="card mb-3">
+    <div class="card-body">
+        <div class="d-flex align-items-center gap-2 mb-3">
+            <h2 class="h5 mb-0 me-auto">@Number. @TypeName</h2>
+            <button type="button" class="btn btn-sm btn-outline-secondary" disabled="@IsFirst" aria-label="Move question @Number up" @onclick="() => OnMove.InvokeAsync(-1)">↑</button>
+            <button type="button" class="btn btn-sm btn-outline-secondary" disabled="@IsLast" aria-label="Move question @Number down" @onclick="() => OnMove.InvokeAsync(1)">↓</button>
+            <button type="button" class="btn btn-sm btn-outline-danger" @onclick="() => OnRemove.InvokeAsync()">Remove</button>
+        </div>
+
+        <div class="mb-3">
+            <span class="form-label d-block">Prompt</span>
+            <RichTextEditor Value="@Question.Prompt" ValueChanged="SetPrompt" Height="9rem" Label="@($"Prompt for question {Number}")" />
+            @if (Question.Type == QuestionType.FillInBlank)
+            {
+                <div class="form-text">Write each blank as {{1}}, {{2}}, and so on. For example: The keyword {{1}} declares a constant in C#.</div>
+            }
+        </div>
+
+        <div class="row g-3 mb-3">
+            @if (Question.Type != QuestionType.WordCloud)
+            {
+                <div class="col-sm-4 col-lg-3">
+                    <label class="form-label" for="@FieldId("points")">Points</label>
+                    <input id="@FieldId("points")" type="number" class="form-control" min="0" @bind="Question.Points" @bind:after="Changed" />
+                </div>
+            }
+            <div class="col-sm-4 col-lg-3">
+                <label class="form-label" for="@FieldId("limit")">Time limit (seconds)</label>
+                <input id="@FieldId("limit")" type="number" class="form-control" placeholder="Quiz default"
+                       min="@QuizRules.MinTimeLimitSeconds" max="@QuizRules.MaxTimeLimitSeconds" @bind="Question.TimeLimitSeconds" @bind:after="Changed" />
+            </div>
+            @if (Question.Type == QuestionType.WordCloud)
+            {
+                <div class="col-sm-4 col-lg-3">
+                    <label class="form-label" for="@FieldId("entries")">Entries per student</label>
+                    <input id="@FieldId("entries")" type="number" class="form-control" min="1" max="@QuizRules.MaxWordCloudEntries" @bind="Question.MaxEntries" @bind:after="Changed" />
+                </div>
+            }
+        </div>
+
+        <details class="mb-3" open="@(!string.IsNullOrEmpty(Question.CodeSnippet))">
+            <summary>Code snippet</summary>
+            <div class="mt-2">
+                <label class="form-label" for="@FieldId("language")">Language</label>
+                <select id="@FieldId("language")" class="form-select mb-2" style="max-width: 16rem" @bind="Question.CodeLanguage" @bind:after="Changed">
+                    <option value="">Detect automatically</option>
+                    @foreach (var language in CodeLanguages.All)
+                    {
+                        <option value="@language.Id">@language.Name</option>
+                    }
+                </select>
+                <label class="form-label" for="@FieldId("code")">Code</label>
+                <textarea id="@FieldId("code")" class="form-control font-monospace mb-2" rows="5" spellcheck="false"
+                          @bind="Question.CodeSnippet" @bind:event="oninput" @bind:after="Changed"></textarea>
+                @if (!string.IsNullOrEmpty(Question.CodeSnippet))
+                {
+                    <CodeBlock Code="@Question.CodeSnippet" Language="@Question.CodeLanguage" />
+                }
+            </div>
+        </details>
+
+        @switch (Question.Type)
+        {
+            case QuestionType.MultipleChoice:
+                <div class="form-check form-check-inline">
+                    <input id="@FieldId("multi")" class="form-check-input" type="checkbox" @bind="Question.AllowMultipleSelect" @bind:after="Changed" />
+                    <label class="form-check-label" for="@FieldId("multi")">Allow multiple select</label>
+                </div>
+                <div class="form-check form-check-inline mb-3">
+                    <input id="@FieldId("partial")" class="form-check-input" type="checkbox" disabled="@(!Question.AllowMultipleSelect)"
+                           @bind="Question.PartialCredit" @bind:after="Changed" />
+                    <label class="form-check-label" for="@FieldId("partial")">Partial credit</label>
+                </div>
+
+                @for (var i = 0; i < Question.Options.Count; i++)
+                {
+                    var option = Question.Options[i];
+                    var optionIndex = i;
+                    <div class="input-group mb-2" @key="option">
+                        <div class="input-group-text">
+                            <input class="form-check-input mt-0" type="checkbox" aria-label="Option @(optionIndex + 1) is correct"
+                                   @bind="option.IsCorrect" @bind:after="Changed" />
+                        </div>
+                        <input class="form-control" maxlength="500" placeholder="Option @(optionIndex + 1)" aria-label="Option @(optionIndex + 1) text"
+                               @bind="option.Text" @bind:after="Changed" />
+                        <input class="form-control font-monospace" placeholder="Code (optional)" aria-label="Option @(optionIndex + 1) code"
+                               @bind="option.CodeSnippet" @bind:after="Changed" />
+                        <button type="button" class="btn btn-outline-danger" disabled="@(Question.Options.Count <= QuizRules.MinOptions)"
+                                aria-label="Remove option @(optionIndex + 1)" @onclick="() => RemoveOption(option)">✕</button>
+                    </div>
+                }
+
+                <button type="button" class="btn btn-sm btn-outline-primary" disabled="@(Question.Options.Count >= QuizRules.MaxOptions)" @onclick="AddOption">Add option</button>
+                <div class="form-text">Tick the correct option or options.</div>
+                break;
+
+            case QuestionType.FillInBlank:
+                @if (Blanks.Count == 0)
+                {
+                    <p class="text-secondary mb-0">Add a blank to the prompt to set its accepted answers.</p>
+                }
+                @foreach (var blank in Blanks)
+                {
+                    <h3 class="h6 mt-3">Blank @blank: accepted answers</h3>
+                    @foreach (var answer in Question.BlankAnswers.Where(a => a.BlankIndex == blank))
+                    {
+                        <div class="input-group mb-2" @key="answer">
+                            <input class="form-control" maxlength="200" placeholder="Accepted answer" aria-label="Accepted answer for blank @blank"
+                                   @bind="answer.AcceptedText" @bind:after="Changed" />
+                            <select class="form-select" style="max-width: 13rem" aria-label="How to match this answer" @bind="answer.MatchMode" @bind:after="Changed">
+                                <option value="@MatchMode.Exact">Exact match</option>
+                                <option value="@MatchMode.CaseInsensitive">Ignore case</option>
+                                <option value="@MatchMode.Fuzzy">Allow a typo</option>
+                            </select>
+                            <button type="button" class="btn btn-outline-danger" aria-label="Remove accepted answer" @onclick="() => RemoveAnswer(answer)">✕</button>
+                        </div>
+                    }
+                    <button type="button" class="btn btn-sm btn-outline-primary" @onclick="() => AddAnswer(blank)">Add accepted answer</button>
+                }
+                break;
+
+            case QuestionType.WordCloud:
+                <p class="text-secondary mb-0">Word clouds are polls, so they're never scored.</p>
+                break;
+        }
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public Question Question { get; set; } = default!;
+
+    [Parameter] public int Number { get; set; }
+
+    [Parameter] public bool IsFirst { get; set; }
+
+    [Parameter] public bool IsLast { get; set; }
+
+    [Parameter] public EventCallback OnChanged { get; set; }
+
+    [Parameter] public EventCallback<int> OnMove { get; set; }
+
+    [Parameter] public EventCallback OnRemove { get; set; }
+
+    private readonly string fieldPrefix = $"q{Guid.NewGuid():N}";
+
+    private string FieldId(string name) => $"{fieldPrefix}-{name}";
+
+    private IReadOnlyList<int> Blanks => BlankTokens.Find(Question.Prompt);
+
+    private string TypeName => Question.Type switch
+    {
+        QuestionType.MultipleChoice => "Multiple choice",
+        QuestionType.WordCloud => "Word cloud",
+        _ => "Fill in the blank",
+    };
+
+    private Task Changed() => OnChanged.InvokeAsync();
+
+    private Task SetPrompt(string value)
+    {
+        Question.Prompt = value;
+        return Changed();
+    }
+
+    private Task AddOption()
+    {
+        Question.Options.Add(new ChoiceOption { Order = Question.Options.Count });
+        return Changed();
+    }
+
+    private Task RemoveOption(ChoiceOption option)
+    {
+        Question.Options.Remove(option);
+        for (var i = 0; i < Question.Options.Count; i++)
+        {
+            Question.Options[i].Order = i;
+        }
+
+        return Changed();
+    }
+
+    private Task AddAnswer(int blank)
+    {
+        Question.BlankAnswers.Add(new BlankAnswer { BlankIndex = blank });
+        return Changed();
+    }
+
+    private Task RemoveAnswer(BlankAnswer answer)
+    {
+        Question.BlankAnswers.Remove(answer);
+        return Changed();
+    }
+}

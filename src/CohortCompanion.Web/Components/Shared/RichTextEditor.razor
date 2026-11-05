@@ -1,0 +1,29 @@
+@* The one place that knows which rich-text library we use, so it can be swapped later. *@
+@using Radzen.Blazor
+
+<RadzenHtmlEditor Value="@Value" ValueChanged="OnChanged" Input="OnInput" style="@($"height: {Height}; width: 100%;")" aria-label="@Label">
+    <RadzenHtmlEditorBold />
+    <RadzenHtmlEditorItalic />
+    <RadzenHtmlEditorUnderline />
+    <RadzenHtmlEditorSeparator />
+    <RadzenHtmlEditorUnorderedList />
+    <RadzenHtmlEditorOrderedList />
+    <RadzenHtmlEditorSeparator />
+    <RadzenHtmlEditorLink />
+    <RadzenHtmlEditorUnlink />
+    <RadzenHtmlEditorColor />
+</RadzenHtmlEditor>
+
+@code {
+    [Parameter] public string? Value { get; set; }
+
+    [Parameter] public EventCallback<string> ValueChanged { get; set; }
+
+    [Parameter] public string Height { get; set; } = "10rem";
+
+    [Parameter] public string Label { get; set; } = "Text";
+
+    private Task OnChanged(string value) => ValueChanged.InvokeAsync(value);
+
+    private Task OnInput(string value) => ValueChanged.InvokeAsync(value);
+}

@@ -1,0 +1,33 @@
+@* Shows code with syntax highlighting. highlight.js runs in the browser and returns escaped HTML, so Blazor
+   keeps owning the DOM. Until that happens (or on prerender) the code shows as plain text. *@
+@inject IJSRuntime JS
+
+<pre class="code-block"><code class="hljs">@if (highlighted is null)
+{
+    @Code
+}
+else
+{
+    @((MarkupString)highlighted)
+}</code></pre>
+
+@code {
+    [Parameter, EditorRequired] public string? Code { get; set; }
+
+    [Parameter] public string? Language { get; set; }
+
+    private string? highlighted;
+    private (string? Code, string? Language) rendered;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (rendered == (Code, Language) && !firstRender)
+        {
+            return;
+        }
+
+        rendered = (Code, Language);
+        highlighted = string.IsNullOrEmpty(Code) ? null : await JS.InvokeAsync<string?>("cc.highlightCode", Code, Language);
+        StateHasChanged();
+    }
+}
