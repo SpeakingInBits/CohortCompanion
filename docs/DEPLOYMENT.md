@@ -94,6 +94,10 @@ It needs a one-time setup:
 1. Create a Microsoft Entra app registration with a federated credential for this repository's `demo` environment.
    Give it the Website Contributor role on the web app, and SQL Security Manager on the SQL server. The second role
    lets the workflow open the database firewall to its runner, and close it again.
+
+   This repository uses GitHub's immutable subject format, so the credential's subject has to include the numeric ids:
+   `repo:SpeakingInBits@7307281/CohortCompanion@1443163509:environment:demo`. If sign-in fails with `AADSTS700213`,
+   compare this with the subject shown in the workflow log.
 2. Give the app registration a database user, the same way as in step 2, using its display name. It needs `db_owner`
    to apply migrations.
 3. In the repository, create an environment named `demo`, and limit its deployment branches to `main`.
