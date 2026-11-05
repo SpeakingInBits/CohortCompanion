@@ -1,0 +1,87 @@
+@* A student following a presentation. It follows the instructor until the student browses back, then stays
+   put until they choose to return. The server only ever sends slides already shown, so a student can't
+   get ahead of the instructor. *@
+
+<div @ontouchstart="OnTouchStart" @ontouchend="OnTouchEnd">
+    @if (Current is { } slide)
+    {
+        <SlideRenderer Layout="slide.Layout" Content="slide.Content" ThemeId="@ThemeId" Reading="true" />
+    }
+    else
+    {
+        <p class="text-center mt-5">Waiting for the first slide.</p>
+    }
+</div>
+
+<div class="slide-nav">
+    <button type="button" class="btn btn-outline-secondary" disabled="@(PreviousIndex is null)" @onclick="Back">Back</button>
+
+    @if (browsing is not null)
+    {
+        <button type="button" class="btn btn-primary" @onclick="JumpToLive">
+            Jump to live
+            <span class="badge text-bg-light ms-1" aria-label="@BehindBy slides behind">@BehindBy</span>
+        </button>
+    }
+
+    <button type="button" class="btn btn-outline-secondary" disabled="@(NextIndex is null)" @onclick="Forward">Forward</button>
+</div>
+
+@code {
+    private const double SwipeDistance = 60;
+
+    [Parameter] public string ThemeId { get; set; } = SlideThemes.DefaultTheme;
+
+    [Parameter] public int LiveIndex { get; set; }
+
+    [Parameter, EditorRequired] public SortedDictionary<int, SlideView> Slides { get; set; } = default!;
+
+    private int? browsing;
+    private double touchStartX;
+
+    private SlideView? Current => Slides.GetValueOrDefault(browsing ?? LiveIndex);
+
+    private int ViewingIndex => browsing ?? LiveIndex;
+
+    private int BehindBy => Math.Max(0, LiveIndex - ViewingIndex);
+
+    private int? PreviousIndex => Slides.Keys.Where(k => k < ViewingIndex).Cast<int?>().LastOrDefault();
+
+    private int? NextIndex => Slides.Keys.Where(k => k > ViewingIndex).Cast<int?>().FirstOrDefault();
+
+    private void Back()
+    {
+        if (PreviousIndex is { } index)
+        {
+            ShowIndex(index);
+        }
+    }
+
+    private void Forward()
+    {
+        if (NextIndex is { } index)
+        {
+            ShowIndex(index);
+        }
+    }
+
+    // Reaching the instructor's slide means following again.
+    private void ShowIndex(int index) => browsing = index == LiveIndex ? null : index;
+
+    private void JumpToLive() => browsing = null;
+
+    private void OnTouchStart(TouchEventArgs e) => touchStartX = e.ChangedTouches.FirstOrDefault()?.ClientX ?? 0;
+
+    private void OnTouchEnd(TouchEventArgs e)
+    {
+        var distance = (e.ChangedTouches.FirstOrDefault()?.ClientX ?? touchStartX) - touchStartX;
+        if (distance > SwipeDistance)
+        {
+            Back();
+        }
+        else if (distance < -SwipeDistance)
+        {
+            Forward();
+        }
+    }
+}

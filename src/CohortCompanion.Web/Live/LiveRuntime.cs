@@ -22,6 +22,8 @@ internal sealed class LiveRuntime
 
     public QuizSnapshot? Quiz { get; init; }
 
+    public PresentationSnapshot? Deck { get; init; }
+
     public SessionStatus Status { get; set; }
 
     public int CurrentIndex { get; set; }
@@ -65,6 +67,9 @@ internal sealed class RuntimeExtras
     public int? PausedRemainingMs { get; set; }
 
     public DateTime? PausedAtUtc { get; set; }
+
+    /// <summary>Indexes of the slides the instructor has shown, which are all students may see.</summary>
+    public HashSet<int> ShownSlides { get; set; } = [];
 
     /// <summary>Normalized words the instructor hid, by question id.</summary>
     public Dictionary<int, HashSet<string>> HiddenWords { get; set; } = [];

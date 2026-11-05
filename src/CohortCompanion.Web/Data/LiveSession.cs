@@ -10,6 +10,8 @@ public class LiveSession
 
     public int? QuizId { get; set; }
 
+    public int? PresentationId { get; set; }
+
     public string Title { get; set; } = "";
 
     public string HostId { get; set; } = "";

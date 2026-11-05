@@ -94,7 +94,14 @@ public sealed record StudentSessionState(
     string Nickname,
     PhaseUpdate Phase,
     AnswerPayload? MyAnswer,
-    Standing? MyStanding);
+    Standing? MyStanding,
+    PresentationState? Presentation = null);
+
+/// <summary>The slides a student may see: only those the instructor has already shown.</summary>
+public sealed record PresentationState(string ThemeId, int LiveIndex, int SlideCount, IReadOnlyList<SlideView> ShownSlides);
+
+/// <summary>Sent to students when the instructor moves to a slide.</summary>
+public sealed record SlideUpdate(int LiveIndex, SlideView Slide);
 
 public sealed record ProjectorState(
     string Title,
@@ -104,7 +111,9 @@ public sealed record ProjectorState(
     int ParticipantCount,
     int ResponseCount,
     PhaseUpdate Phase,
-    IReadOnlyList<LeaderboardEntry>? Leaderboard);
+    IReadOnlyList<LeaderboardEntry>? Leaderboard,
+    string? ThemeId = null,
+    SlideView? Slide = null);
 
 public sealed record LeaderboardEntry(int Rank, string Nickname, int Score);
 
@@ -119,6 +128,7 @@ public static class HubEvents
     public const string HubPath = "/hubs/session";
 
     public const string SessionState = nameof(SessionState);
+    public const string SlideChanged = nameof(SlideChanged);
     public const string PhaseChanged = nameof(PhaseChanged);
     public const string ResultsUpdated = nameof(ResultsUpdated);
     public const string LeaderboardUpdated = nameof(LeaderboardUpdated);

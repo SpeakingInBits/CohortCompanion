@@ -66,6 +66,10 @@
             <h1 class="h3 mt-5 text-center">@state.Title</h1>
             <p class="text-center">You're in. Waiting for the instructor to start.</p>
         }
+        else if (state.Kind == SessionKind.Presentation)
+        {
+            <PresentationView ThemeId="@themeId" LiveIndex="liveIndex" Slides="shownSlides" />
+        }
         else if (phase.Phase == QuestionPhase.Finished)
         {
             <h1 class="h3 mt-5 text-center">That's the end of the quiz</h1>
@@ -123,6 +127,9 @@
     private StudentSessionState? state;
     private PhaseUpdate? phase;
     private Standing? standing;
+    private readonly SortedDictionary<int, SlideView> shownSlides = [];
+    private string themeId = SlideThemes.DefaultTheme;
+    private int liveIndex;
     private string? token;
     private string? joinCode;
     private string? nickname;
@@ -150,6 +157,12 @@
         hub.On<QuestionResults>(HubEvents.ResultsUpdated, results => InvokeAsync(() =>
         {
             phase = phase is null ? null : phase with { Results = results };
+            StateHasChanged();
+        }));
+        hub.On<SlideUpdate>(HubEvents.SlideChanged, update => InvokeAsync(() =>
+        {
+            shownSlides[update.Slide.Index] = update.Slide;
+            liveIndex = update.LiveIndex;
             StateHasChanged();
         }));
         hub.On<Standing?>(HubEvents.LeaderboardUpdated, update => InvokeAsync(() =>
@@ -274,6 +287,17 @@
     {
         state = restored;
         standing = restored.MyStanding;
+        if (restored.Presentation is { } presentation)
+        {
+            themeId = presentation.ThemeId;
+            liveIndex = presentation.LiveIndex;
+            shownSlides.Clear();
+            foreach (var slide in presentation.ShownSlides)
+            {
+                shownSlides[slide.Index] = slide;
+            }
+        }
+
         answered = restored.MyAnswer is not null;
         screen = Screen.Live;
         SetPhase(restored.Phase);
