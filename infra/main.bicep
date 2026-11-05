@@ -181,6 +181,9 @@ resource webApp 'Microsoft.Web/sites@2023-12-01' = {
     clientAffinityEnabled: true
     siteConfig: {
       linuxFxVersion: 'DOTNETCORE|10.0'
+      // The publish output has two .runtimeconfig.json files, one from the WebAssembly client. Without this,
+      // App Service can't tell which app to start and shows its placeholder page instead.
+      appCommandLine: 'dotnet CohortCompanion.Web.dll'
       alwaysOn: true
       webSocketsEnabled: true
       http20Enabled: true
