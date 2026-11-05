@@ -10,12 +10,12 @@ steps have to be done by hand, because they need your own Azure sign-in.
 | Resource | Notes |
 |---|---|
 | App Service plan and Linux web app | B1 by default, with WebSockets, Always On, and session affinity on |
-| Azure SQL server and database | Microsoft Entra sign-in only, so there's no SQL password. S0 by default |
+| Azure SQL server and database | Microsoft Entra sign-in only, so there's no SQL password. Basic by default |
 | Storage account | Private `images` container. Images are served through the app, from our own domain |
 | Key Vault | Empty for now. Microsoft sign-in's client secret goes here in milestone 8 |
 | Application Insights | Default IP masking stays on |
 
-**Cost:** check current pricing before you deploy. B1 and the S0 database are the main costs, and both bill
+**Cost:** check current pricing before you deploy. B1 and the database are the main costs, and both bill
 for as long as they exist, even when nobody is using the app.
 
 ## 1. Create the resources
@@ -83,6 +83,8 @@ invite codes for your testers.
   and students reconnect by themselves, but they'll see a pause.
 - **Scaling up** is a settings change: redeploy the Bicep with a different `planSku`. It can restart the app. Check the
   connection limit for the size you choose: S1 and P1v3 have the same limit as B1.
+- **Moving the database up** is also a settings change: redeploy the Bicep with a different `databaseSku`. Basic has
+  only 5 DTUs and 2 GB, so move to S0 or higher before a large class.
 - **Scaling out is not supported yet.** Live sessions are held in the memory of one instance. Running more than one
   needs Azure SignalR Service and shared session state.
 - **Before relying on it with a large class**, try it on the real plan. See "Load testing" below for what has and
@@ -176,7 +178,7 @@ These are local numbers, and they don't represent a real B1, whose core is share
 - **Downloading the student client.** About 3 MB compressed per student, which is likely the first thing to hurt on
   B1 or on classroom Wi-Fi. Everyone's first visit happens at the same moment.
 - **Real networks.** Everything here ran over loopback, with no Wi-Fi, TLS, or App Service proxy.
-- **Azure SQL itself.** The delay above simulates latency, not the S0 tier's throughput limits.
+- **Azure SQL itself.** The delay above simulates latency, not the database tier's throughput limits.
 - **Real browsers, the host page, or the projector** during the test.
 
 More than 3000 students behind one campus address can't all join within a minute, because of the rate limit.

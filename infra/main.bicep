@@ -33,6 +33,14 @@ param location string = 'centralus'
 ])
 param planSku string = 'B1'
 
+@description('Azure SQL database size. Basic is the cheapest; see docs/DEPLOYMENT.md for moving up.')
+@allowed([
+  'Basic'
+  'S0'
+  'S1'
+])
+param databaseSku string = 'Basic'
+
 @description('Display name of the Microsoft Entra user or group that administers the SQL server.')
 param sqlAdminLogin string
 
@@ -122,8 +130,8 @@ resource sqlDatabase 'Microsoft.Sql/servers/databases@2023-08-01-preview' = {
   name: databaseName
   location: location
   sku: {
-    name: 'S0'
-    tier: 'Standard'
+    name: databaseSku
+    tier: databaseSku == 'Basic' ? 'Basic' : 'Standard'
   }
 }
 
