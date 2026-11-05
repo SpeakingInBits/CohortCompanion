@@ -30,10 +30,23 @@ Requirements: the .NET 10 SDK and SQL Server LocalDB (installed with Visual Stud
 
 | Project | Purpose |
 |---|---|
-| `src/CohortCompanion.Web` | Server: Identity, EF Core, admin and instructor UI |
-| `src/CohortCompanion.Web.Client` | WebAssembly client for the student-facing pages |
+| `src/CohortCompanion.Web` | Server: Identity, EF Core, instructor and admin UI, the live session engine and its SignalR hub |
+| `src/CohortCompanion.Web.Client` | WebAssembly client for student devices and the projector, plus components the server pages share |
 | `src/CohortCompanion.Shared` | Types shared by server and client |
 | `tests/CohortCompanion.Tests` | xUnit tests |
+| `infra` | Azure infrastructure in Bicep |
+
+## Trying it out
+
+1. Under **Quizzes**, create a quiz, add a question, and save it. Then choose **Run live**.
+2. Open the join link in another browser or a private window, and enter a nickname.
+3. On the host page, choose **Open projector view** for what the class sees, then **Start**.
+
+**Presentations** work the same way, with **Present**.
+
+## Deploying
+
+See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
 
 ## Common tasks
 

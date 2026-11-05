@@ -26,3 +26,6 @@ jobs:
 
       - name: Test
         run: dotnet test CohortCompanion.slnx --no-build --configuration Release
+
+      - name: Check the Azure infrastructure compiles
+        run: az bicep build --file infra/main.bicep --stdout > /dev/null

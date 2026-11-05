@@ -376,43 +376,65 @@ public sealed partial class LiveSessionManager
             runtime.Quiz?.SpeedBonusEnabled == true,
             elapsedMs);
 
-    private static int TotalScore(LiveRuntime runtime, Guid participantId) =>
-        runtime.Responses.Values.Where(r => r.ParticipantId == participantId).Sum(r => r.Score);
+    /// <summary>
+    /// Every student's total and the rank for each score, worked out in one pass. A reveal needs this for the
+    /// whole class while holding the session's lock, so it must not rescan the answers once per student.
+    /// </summary>
+    private sealed record ScoreTable(Dictionary<Guid, int> Totals, Dictionary<int, int> RankByScore, int ParticipantCount);
+
+    private static ScoreTable BuildScoreTable(LiveRuntime runtime)
+    {
+        var totals = runtime.ActiveParticipants.ToDictionary(p => p.Id, _ => 0);
+        foreach (var response in runtime.Responses.Values)
+        {
+            if (totals.TryGetValue(response.ParticipantId, out var total))
+            {
+                totals[response.ParticipantId] = total + response.Score;
+            }
+        }
+
+        // Equal scores share a rank, and the next rank skips past them: 1, 1, 3.
+        var rankByScore = new Dictionary<int, int>();
+        var position = 0;
+        foreach (var score in totals.Values.OrderDescending())
+        {
+            position++;
+            rankByScore.TryAdd(score, position);
+        }
+
+        return new ScoreTable(totals, rankByScore, totals.Count);
+    }
 
     private static bool ShowsLeaderboard(LiveRuntime runtime) =>
         runtime.Quiz?.ShowLeaderboard == true && runtime.Phase is QuestionPhase.AnswerRevealed or QuestionPhase.Finished;
 
-    /// <summary>The top of the class. Equal scores share a rank.</summary>
+    /// <summary>The top of the class.</summary>
     private static List<LeaderboardEntry> BuildLeaderboard(LiveRuntime runtime, int count)
     {
-        var scores = runtime.ActiveParticipants
-            .Select(p => (p.Nickname, Score: TotalScore(runtime, p.Id)))
+        var table = BuildScoreTable(runtime);
+        return runtime.ActiveParticipants
+            .Select(p => (p.Nickname, Score: table.Totals[p.Id]))
             .OrderByDescending(p => p.Score)
             .ThenBy(p => p.Nickname, StringComparer.OrdinalIgnoreCase)
-            .ToList();
-
-        return scores
             .Take(count)
-            .Select(p => new LeaderboardEntry(1 + scores.Count(other => other.Score > p.Score), p.Nickname, p.Score))
+            .Select(p => new LeaderboardEntry(table.RankByScore[p.Score], p.Nickname, p.Score))
             .ToList();
     }
 
-    private static Standing? BuildStanding(LiveRuntime runtime, LiveParticipant participant)
+    private static Standing? BuildStanding(LiveRuntime runtime, LiveParticipant participant, ScoreTable table)
     {
         if (runtime.Quiz is not { ScoringEnabled: true } quiz)
         {
             return null;
         }
 
-        var total = TotalScore(runtime, participant.Id);
-        int? rank = quiz.ShowLeaderboard
-            ? 1 + runtime.ActiveParticipants.Count(p => TotalScore(runtime, p.Id) > total)
-            : null;
+        var total = table.Totals.GetValueOrDefault(participant.Id);
+        int? rank = quiz.ShowLeaderboard ? table.RankByScore.GetValueOrDefault(total, table.ParticipantCount) : null;
 
         var last = runtime.CurrentQuestion is { } question && runtime.Responses.TryGetValue((participant.Id, question.Id), out var response)
             ? response
             : null;
-        return new Standing(total, rank, runtime.ActiveParticipants.Count(), last?.Score ?? 0, last?.IsCorrect);
+        return new Standing(total, rank, table.ParticipantCount, last?.Score ?? 0, last?.IsCorrect);
     }
 
     /// <summary>Tells each student their own position, and nobody else's.</summary>
@@ -423,9 +445,10 @@ public sealed partial class LiveSessionManager
             return;
         }
 
+        var table = BuildScoreTable(runtime);
         foreach (var participant in runtime.ActiveParticipants)
         {
-            var standing = BuildStanding(runtime, participant);
+            var standing = BuildStanding(runtime, participant, table);
             foreach (var connectionId in participant.Connections)
             {
                 await broadcaster.ToConnectionAsync(connectionId, HubEvents.LeaderboardUpdated, standing);

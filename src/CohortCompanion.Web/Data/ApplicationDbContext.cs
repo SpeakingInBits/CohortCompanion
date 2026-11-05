@@ -35,7 +35,7 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
             presentation.HasOne(p => p.Owner)
                 .WithMany()
                 .HasForeignKey(p => p.OwnerId)
-                .OnDelete(DeleteBehavior.Restrict);
+                .OnDelete(DeleteBehavior.Cascade);
             presentation.HasMany(p => p.Slides)
                 .WithOne()
                 .HasForeignKey(s => s.PresentationId)
@@ -52,7 +52,7 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
             session.HasOne(s => s.Host)
                 .WithMany()
                 .HasForeignKey(s => s.HostId)
-                .OnDelete(DeleteBehavior.Restrict);
+                .OnDelete(DeleteBehavior.Cascade);
             session.HasMany(s => s.Participants)
                 .WithOne()
                 .HasForeignKey(p => p.LiveSessionId)
@@ -89,7 +89,7 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
             quiz.HasOne(q => q.Owner)
                 .WithMany()
                 .HasForeignKey(q => q.OwnerId)
-                .OnDelete(DeleteBehavior.Restrict);
+                .OnDelete(DeleteBehavior.Cascade);
             quiz.HasMany(q => q.Questions)
                 .WithOne()
                 .HasForeignKey(q => q.QuizId)

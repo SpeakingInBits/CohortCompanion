@@ -1,6 +1,6 @@
 # CohortCompanion – Planning Document
 
-_Status: draft, last updated 2026-11-02_
+_Status: milestones 1 to 7 built, demo not yet deployed. Last updated 2026-11-05_
 
 CohortCompanion is an ASP.NET Core Blazor app for collaborative classroom activities, similar to Mentimeter.
 Instructors build **presentations** (slideshows students follow on their own devices) and **quizzes**
@@ -235,19 +235,29 @@ Student to server:
 - `Rejoin(participantToken) → sessionState`
 - `SubmitAnswer(questionId, payload) → { accepted, reason }`
 
-Instructor to server (requires the `Instructor` role and session ownership):
-- `StartSession`, `GoTo(index)`, `Next`, `Previous`
-- `OpenQuestion`, `CloseQuestion`, `ShowResults`, `RevealAnswer`, `PauseTimer`, `ResumeTimer`
-- `RemoveParticipant(id)`, `RenameParticipant(id, name)`, `HideWord(questionId, word)`,
-  `AcceptAnswer(questionId, blankIndex, text)`
-- `EndSession`
+Projector to server (requires the `Instructor` role and session ownership):
+- `WatchProjector(sessionId) → projectorState`
 
-Server to clients:
-- `SessionState(snapshot)`: full state, sent on join, on rejoin, and after any reconnect
-- `SlideChanged`, `PhaseChanged`, `ResponseCountChanged`, `ResultsUpdated`, `LeaderboardUpdated`,
-  `ParticipantJoined`, `ParticipantRemoved`, `SessionEnded`
+Instructor controls don't go through the hub. The host page runs on the server (Interactive Server), so it
+calls `LiveSessionManager` directly, which checks that the caller owns the session: start, go to a slide, open,
+close, show results, reveal, next, pause, resume, extend, skip, remove, rename, hide a word, accept an answer, end.
 
-Groups: `session:{id}:students`, `session:{id}:host`, `session:{id}:projector`.
+Who receives what, so that a whole class answering at once stays cheap:
+
+| Event | Goes to | When |
+|---|---|---|
+| Join and rejoin results | The one student | Full state, on join, on rejoin, and after any reconnect |
+| `PhaseChanged`, `SlideChanged` | Students | Once per change |
+| `ResultsUpdated` | Students | Only once the instructor has shown results |
+| `LeaderboardUpdated` | Each student, separately | That student's own score and rank, from the reveal onward |
+| `ProjectorUpdated` | Projector | Throttled to twice a second, with counts, nicknames, and the top five |
+| `NicknameChanged`, `ParticipantRemoved` | The one student | When the instructor renames or removes them |
+| `SessionEnded` | Students and projector | Once |
+
+An answer never causes a broadcast to students. Answers are buffered in memory and saved in batches, at each phase
+change and every few seconds. The host page sees live totals, also throttled.
+
+Groups: `session:{id}:students`, `session:{id}:projector`.
 
 ---
 
@@ -302,13 +312,15 @@ and limits what is kept and shown.
 - Never log answer content or nicknames.
 - Application Insights stays on its default IP masking. Do not log IP addresses alongside participant
   IDs.
-- Join and answer endpoints are rate-limited per IP in memory only, never persisted.
+- Join and answer calls are rate-limited in memory only, never persisted. Limits are tight per connection and
+  loose per IP, because a whole class usually shares one address behind campus Wi-Fi.
 
 **Infrastructure**
 - Azure region in the US. Azure SQL Transparent Data Encryption (on by default). TLS everywhere with HSTS.
 - Managed identity for database access. Secrets in Key Vault.
-- Instructors can only reach their own sessions. Admin actions are audit-logged.
-- A written incident response contact and process, in case of a breach.
+- Instructors can only reach their own sessions. Admin actions are audit-logged to the application log, by id only.
+- A written incident response contact and process, in case of a breach. **Still to be decided:** see
+  [DEPLOYMENT.md](DEPLOYMENT.md).
 
 **Who operates the app**
 - **Demo (now):** SpeakingInBits hosts it on Azure for testers. No agreement with the school for now,
@@ -340,6 +352,9 @@ reworking it.
 
 ## 9. Milestones
 
+Milestones 1 to 6 are built. Milestone 7 is built except the demo deployment itself, which needs an Azure sign-in:
+see [DEPLOYMENT.md](DEPLOYMENT.md).
+
 1. **Foundation:** solution scaffold, EF Core with LocalDB, Identity with email/password, roles,
    bootstrap admin, invite codes, admin password-reset links, layout and theme, CI build
 2. **Quiz authoring:** quiz CRUD, editors for all three question types, code snippets with highlighting
@@ -358,4 +373,6 @@ reworking it.
 
 ## 10. Open questions
 
-None right now. Answered questions are recorded in section 1.
+- **Incident contact:** who is the named contact for a breach? See section 8.
+- **Load test:** capacity figures are estimates until the app has been tested with a few hundred simulated clients
+  on the real App Service plan.

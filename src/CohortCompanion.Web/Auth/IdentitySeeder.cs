@@ -6,12 +6,12 @@ namespace CohortCompanion.Web.Auth;
 
 public static class IdentitySeeder
 {
-    /// <summary>Applies migrations in development and makes sure every role exists.</summary>
+    /// <summary>Applies migrations in development, or when configured to, and makes sure every role exists.</summary>
     public static async Task InitializeDatabaseAsync(this WebApplication app)
     {
         await using var scope = app.Services.CreateAsyncScope();
 
-        if (app.Environment.IsDevelopment())
+        if (app.Environment.IsDevelopment() || app.Configuration.GetValue<bool>("Database:MigrateOnStartup"))
         {
             var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
             await db.Database.MigrateAsync();

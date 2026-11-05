@@ -7,6 +7,7 @@
 @using CohortCompanion.Web.Live
 
 @inject LiveSessionManager Manager
+@inject SessionHistoryService History
 
 <PageTitle>Sessions</PageTitle>
 
@@ -40,14 +41,48 @@ else
     </div>
 }
 
+<h2 class="h4 mt-4">Past sessions</h2>
+@if (past.Count == 0)
+{
+    <p>Sessions you've finished appear here, with totals for each question.</p>
+}
+else
+{
+    <div class="table-responsive">
+        <table class="table align-middle">
+            <thead>
+                <tr><th>Title</th><th>Type</th><th>Ended</th><th></th></tr>
+            </thead>
+            <tbody>
+                @foreach (var session in past)
+                {
+                    <tr>
+                        <td>@session.Title</td>
+                        <td>@session.Kind</td>
+                        <td>@session.EndedAtUtc.ToString("yyyy-MM-dd HH:mm") UTC</td>
+                        <td class="text-end">
+                            @if (session.Kind == SessionKind.Quiz)
+                            {
+                                <a class="btn btn-sm btn-outline-primary" href="sessions/@session.Id/summary">View totals</a>
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+
 @code {
     [CascadingParameter] private Task<AuthenticationState> AuthState { get; set; } = default!;
 
     private IReadOnlyList<SessionListItem> live = [];
+    private IReadOnlyList<PastSession> past = [];
 
     protected override async Task OnInitializedAsync()
     {
         var hostId = (await AuthState).User.FindFirstValue(ClaimTypes.NameIdentifier)!;
         live = Manager.ListLive(hostId);
+        past = await History.ListAsync(hostId);
     }
 }

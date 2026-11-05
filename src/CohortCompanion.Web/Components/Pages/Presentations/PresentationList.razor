@@ -9,6 +9,7 @@
 @inject PresentationService Presentations
 @inject LiveSessionManager Manager
 @inject NavigationManager NavigationManager
+@inject AuditLog Audit
 
 <PageTitle>Presentations</PageTitle>
 
@@ -139,7 +140,12 @@ else
 
     private async Task DeleteAsync(int id)
     {
-        await Presentations.DeleteAsync(id, userId, isAdmin);
+        var deleted = await Presentations.DeleteAsync(id, userId, isAdmin);
+        if (deleted && showAll)
+        {
+            Audit.Record(userId, "DeletePresentation", $"presentation:{id}");
+        }
+
         pendingDelete = null;
         await LoadAsync();
     }

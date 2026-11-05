@@ -1,0 +1,65 @@
+@page "/sessions/{Id:guid}/summary"
+@attribute [Authorize(Roles = Roles.Instructor)]
+@rendermode InteractiveServer
+
+@using System.Security.Claims
+@using CohortCompanion.Web.Live
+
+@inject SessionHistoryService History
+
+<PageTitle>Session summary</PageTitle>
+
+@if (notFound)
+{
+    <h1>Session not found</h1>
+    <p><a href="sessions">Back to sessions</a></p>
+}
+else if (detail is null)
+{
+    <p><em>Loading…</em></p>
+}
+else
+{
+    <h1>@detail.Title</h1>
+    <p class="text-secondary">Ended @detail.EndedAtUtc.ToString("yyyy-MM-dd HH:mm") UTC. Totals only: nicknames and individual answers were deleted.</p>
+
+    @if (detail.Questions.Count == 0)
+    {
+        <p>Nothing was answered in this session.</p>
+    }
+
+    @foreach (var question in detail.Questions)
+    {
+        <div class="card mb-3">
+            <div class="card-body">
+                <h2 class="h5">@(question.QuestionIndex + 1). @question.PromptText</h2>
+                <p class="text-secondary">
+                    @question.Results.ResponseCount of @question.ParticipantCount answered
+                    @if (question.Results.AverageScore is { } average)
+                    {
+                        <span>· Average score @average.ToString("0")</span>
+                    }
+                </p>
+                <ResultsView Results="question.Results" />
+            </div>
+        </div>
+    }
+
+    <a class="btn btn-outline-secondary" href="sessions">Back to sessions</a>
+}
+
+@code {
+    [Parameter] public Guid Id { get; set; }
+
+    [CascadingParameter] private Task<AuthenticationState> AuthState { get; set; } = default!;
+
+    private SessionDetail? detail;
+    private bool notFound;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var hostId = (await AuthState).User.FindFirstValue(ClaimTypes.NameIdentifier)!;
+        detail = await History.GetAsync(Id, hostId);
+        notFound = detail is null;
+    }
+}
