@@ -191,7 +191,6 @@ resource webApp 'Microsoft.Web/sites@2023-12-01' = {
         { name: 'DataProtection__KeysPath', value: '/home/data-protection-keys' }
         { name: 'Images__BlobServiceUri', value: storage.properties.primaryEndpoints.blob }
         { name: 'Images__BlobContainer', value: imageContainerName }
-        { name: 'WEBSITE_RUN_FROM_PACKAGE', value: '1' }
       ]
       connectionStrings: [
         {
