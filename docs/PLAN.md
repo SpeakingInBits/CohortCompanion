@@ -374,6 +374,6 @@ see [DEPLOYMENT.md](DEPLOYMENT.md).
 ## 10. Open questions
 
 - **Incident contact:** who is the named contact for a breach? See section 8.
-- **Load test on Azure:** local tests on one pinned core handled 1000 simulated students without failures: see
+- **Load test on Azure:** local tests on one pinned core handled 30 classes of 50 at once without failures: see
   [DEPLOYMENT.md](DEPLOYMENT.md). That still needs confirming on the real App Service plan, along with the student
   client download, which the local test doesn't cover.

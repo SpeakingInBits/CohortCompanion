@@ -90,7 +90,7 @@ invite codes for your testers.
 
 ## Load testing
 
-`tests/CohortCompanion.LoadTest` runs one quiz session with simulated students, then reports latency, CPU, memory, and
+`tests/CohortCompanion.LoadTest` runs quiz sessions with simulated students, then reports latency, CPU, memory, and
 failures. It starts a copy of the real app in a child process, pinned to one CPU core with a 1.25 GB heap limit, so
 the runtime sees something close to a B1. The simulated students run on the other cores.
 
@@ -98,24 +98,48 @@ the runtime sees something close to a B1. The simulated students run on the othe
 dotnet run --configuration Release --project tests/CohortCompanion.LoadTest -- --students 500
 ```
 
+To simulate many classes at once, which is the normal pattern at a school:
+
+```bash
+dotnet run --configuration Release --project tests/CohortCompanion.LoadTest -- --students 50 --classes 20 --stagger 30 --db-delay 10
+```
+
 Options:
 
 | Option | Meaning |
 |---|---|
-| `--students <n>` | Class size, up to 1000. The app allows 1000 joins a minute per address, and every simulated student shares one |
+| `--students <n>` | Students in each class |
+| `--classes <n>` | How many classes run at the same time, each its own session. The app allows 3000 joins a minute per address, and every simulated student shares one |
+| `--stagger <seconds>` | Starts each class at a random moment within this window. Without it, they all start together |
 | `--db-delay <ms>` | Adds a delay to every database command, because LocalDB answers far faster than Azure SQL |
 | `--out <file>` | Also appends the results to a file |
 
 It needs LocalDB, and it deletes and recreates its own `CohortCompanionLoadTest` database on every run. Instructor
 commands go through control endpoints that exist only in this test host, not in the app itself.
 
-Each run has three questions: students answer two of them spread over 5 seconds, and one all at the same instant. All
-of them join at once, and all of them drop and reconnect at once near the end. That's harsher than a real class.
+Each session has four questions: students answer three of them spread over 5 seconds, and one all at the same instant.
+The last question closes on its timer, which shows how late the background tick runs. Everyone in a class joins at
+once, and everyone drops and reconnects at once near the end. That's harsher than a real class.
 
 ### Results
 
 Measured on 2026-11-05, on one thread of a 2.7 GHz Intel Core i7-6820HQ laptop with a scored quiz. Times are the 95th
 percentile. There were no failures in any run: every join, answer, reconnect, and event got through.
+
+**Many classes at once**, with 50 students in each and about 15 ms added to each database command. This is the
+pattern to expect. Each row is one representative run, and there were 12 runs in all.
+
+| Classes | Students | Classes start | Slowest class joined in | Question reaches students | Answer, everyone at once | Results reach students | Timer closes late by | Average CPU | Peak memory |
+|---|---|---|---|---|---|---|---|---|---|
+| 6 | 300 | Within 30 s | 1.1 s | 34 ms | 25 ms | 34 ms | 250 ms | 30% | 194 MB |
+| 20 | 1000 | Within 5 s | 2.0 s | 54 ms | 16 ms | 67 ms | 252 ms | 43% | 224 MB |
+| 20 | 1000 | Same moment | 4.7 s | 48 ms | 25 ms | 50 ms | 297 ms | 54% | 231 MB |
+| 30 | 1500 | Within 30 s | 1.3 s | 43 ms | 48 ms | 49 ms | 251 ms | 42% | 239 MB |
+
+The tick runs every 250 ms, so a timer closing up to about that late is expected.
+
+**One large session**, with no added database delay. These figures come from three-question runs, before the timed
+question was added:
 
 | Students | Everyone joined in | Question reaches students | Answer, everyone at once | Results reach students | Reconnect | Average CPU | Peak memory |
 |---|---|---|---|---|---|---|---|
@@ -134,8 +158,12 @@ With 10 ms added to each database command, which works out to about 15 ms on Win
 
 What this shows:
 
-- **Hub traffic isn't the limit on one core, up to 1000 students.** CPU reached 100% only in short bursts, and memory
+- **Hub traffic isn't the limit on one core, up to 1500 students.** CPU reached 100% only in short bursts, and memory
   stayed far below B1's 1.75 GB.
+- **Classes don't slow each other down.** Each session ticks separately, so a class waiting on the database can't delay
+  another class's timers. Before this was fixed, one class's deadlock made timers everywhere up to 14 seconds late.
+- **Many small classes are easier than one big one.** Joining happens one at a time within a session, so 1000 students
+  across 20 classes get in far faster than 1000 in one session.
 - **Database latency slows joining.** Each join writes to the database while holding the session's lock, so joins
   happen one at a time. Answers are unaffected, because they're saved in batches. Real classes join over half a
   minute or so, which should hide this.
@@ -149,9 +177,9 @@ These are local numbers, and they don't represent a real B1, whose core is share
   B1 or on classroom Wi-Fi. Everyone's first visit happens at the same moment.
 - **Real networks.** Everything here ran over loopback, with no Wi-Fi, TLS, or App Service proxy.
 - **Azure SQL itself.** The delay above simulates latency, not the S0 tier's throughput limits.
-- **Several sessions at once**, and real browsers, the host page, or the projector during the test.
+- **Real browsers, the host page, or the projector** during the test.
 
-A lecture of more than 1000 behind one campus address also can't all join within a minute, because of the rate limit.
+More than 3000 students behind one campus address can't all join within a minute, because of the rate limit.
 
 ## Incident response
 
