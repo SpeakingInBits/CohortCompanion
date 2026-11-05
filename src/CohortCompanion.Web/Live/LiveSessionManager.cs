@@ -5,6 +5,7 @@ using System.Text.Json;
 using CohortCompanion.Shared;
 using CohortCompanion.Shared.Live;
 using CohortCompanion.Web.Data;
+using CohortCompanion.Web.Presentations;
 using CohortCompanion.Web.Quizzes;
 using Microsoft.EntityFrameworkCore;
 
@@ -29,7 +30,11 @@ public sealed record HostView(
     IReadOnlyList<ParticipantView> Participants,
     QuestionResults? LiveResults,
     bool IsTimed,
-    IReadOnlyList<LeaderboardEntry>? Leaderboard);
+    IReadOnlyList<LeaderboardEntry>? Leaderboard,
+    DeckView? Deck);
+
+/// <summary>What the instructor sees while presenting, including the notes students never receive.</summary>
+public sealed record DeckView(string ThemeId, SlideView? Current, SlideView? Next, string SpeakerNotes);
 
 public sealed record SessionListItem(Guid Id, string Title, SessionKind Kind, string JoinCode, SessionStatus Status, int ParticipantCount);
 
@@ -74,7 +79,6 @@ public sealed partial class LiveSessionManager(
         }
 
         var snapshot = QuizSnapshot.From(quiz);
-        var now = UtcNow;
         var runtime = new LiveRuntime
         {
             Id = Guid.NewGuid(),
@@ -85,8 +89,40 @@ public sealed partial class LiveSessionManager(
             Quiz = snapshot,
             Status = SessionStatus.Lobby,
             Phase = QuestionPhase.Waiting,
-            LastActivityUtc = now,
+            LastActivityUtc = UtcNow,
         };
+
+        return await RegisterAsync(runtime, JsonSerializer.Serialize(snapshot, Json), quiz.Id, null, cancellationToken);
+    }
+
+    /// <summary>Creates a presentation session in the lobby. The caller has already loaded the deck as its owner.</summary>
+    public async Task<Guid?> CreatePresentationSessionAsync(PresentationDocument document, string hostId, CancellationToken cancellationToken = default)
+    {
+        if (document.Slides.Count == 0)
+        {
+            return null;
+        }
+
+        var snapshot = PresentationSnapshot.From(document);
+        var runtime = new LiveRuntime
+        {
+            Id = Guid.NewGuid(),
+            Kind = SessionKind.Presentation,
+            HostId = hostId,
+            JoinCode = ReserveJoinCode(),
+            Title = snapshot.Title,
+            Deck = snapshot,
+            Status = SessionStatus.Lobby,
+            Phase = QuestionPhase.Waiting,
+            LastActivityUtc = UtcNow,
+        };
+
+        return await RegisterAsync(runtime, JsonSerializer.Serialize(snapshot, Json), null, document.Id, cancellationToken);
+    }
+
+    private async Task<Guid?> RegisterAsync(LiveRuntime runtime, string snapshotJson, int? quizId, int? presentationId, CancellationToken cancellationToken)
+    {
+        var now = runtime.LastActivityUtc;
         sessionByCode[runtime.JoinCode] = runtime.Id;
 
         await using var db = await dbFactory.CreateDbContextAsync(cancellationToken);
@@ -94,15 +130,16 @@ public sealed partial class LiveSessionManager(
         {
             Id = runtime.Id,
             Kind = runtime.Kind,
-            QuizId = quiz.Id,
+            QuizId = quizId,
+            PresentationId = presentationId,
             Title = runtime.Title,
-            HostId = hostId,
+            HostId = runtime.HostId,
             JoinCode = runtime.JoinCode,
             Status = runtime.Status,
             Phase = runtime.Phase,
             CreatedAtUtc = now,
             LastActivityUtc = now,
-            SnapshotJson = JsonSerializer.Serialize(snapshot, Json),
+            SnapshotJson = snapshotJson,
             RuntimeJson = JsonSerializer.Serialize(runtime.Extras, Json),
         });
         await db.SaveChangesAsync(cancellationToken);
@@ -351,7 +388,7 @@ public sealed partial class LiveSessionManager(
                 runtime.Status,
                 runtime.Phase,
                 runtime.CurrentIndex,
-                runtime.Quiz?.Questions.Count ?? 0,
+                ItemCount(runtime),
                 question,
                 RemainingMs(runtime),
                 runtime.Extras.PausedRemainingMs is not null,
@@ -359,7 +396,8 @@ public sealed partial class LiveSessionManager(
                 runtime.ActiveParticipants.OrderBy(p => p.Nickname, StringComparer.OrdinalIgnoreCase).Select(p => new ParticipantView(p.Id, p.Nickname)).ToList(),
                 question is null ? null : BuildResults(runtime, question, reveal: true),
                 runtime.Quiz?.Mode == QuizMode.Timed,
-                runtime.Quiz?.ScoringEnabled == true ? BuildLeaderboard(runtime, 5) : null);
+                runtime.Quiz?.ScoringEnabled == true ? BuildLeaderboard(runtime, 5) : null,
+                BuildDeckView(runtime));
         }
         finally
         {
@@ -536,6 +574,8 @@ public sealed partial class LiveSessionManager(
 
     // ---- Views ----
 
+    private static int ItemCount(LiveRuntime runtime) => runtime.Quiz?.Questions.Count ?? runtime.Deck?.Slides.Count ?? 0;
+
     private int? RemainingMs(LiveRuntime runtime)
     {
         if (runtime.Extras.PausedRemainingMs is { } paused)
@@ -569,7 +609,7 @@ public sealed partial class LiveSessionManager(
             runtime.Status,
             runtime.Phase,
             runtime.CurrentIndex,
-            runtime.Quiz?.Questions.Count ?? 0,
+            ItemCount(runtime),
             showQuestion ? question?.ToStudent() : null,
             RemainingMs(runtime),
             runtime.Extras.PausedRemainingMs is not null,
@@ -580,7 +620,7 @@ public sealed partial class LiveSessionManager(
     {
         var question = runtime.CurrentQuestion;
         var mine = question is not null && runtime.Responses.TryGetValue((participant.Id, question.Id), out var response) ? response.Answer : null;
-        return new StudentSessionState(runtime.Kind, runtime.Title, participant.Nickname, BuildPhaseUpdate(runtime), mine, BuildStanding(runtime, participant));
+        return new StudentSessionState(runtime.Kind, runtime.Title, participant.Nickname, BuildPhaseUpdate(runtime), mine, BuildStanding(runtime, participant), BuildPresentationState(runtime));
     }
 
     private ProjectorState BuildProjectorState(LiveRuntime runtime)
@@ -594,7 +634,9 @@ public sealed partial class LiveSessionManager(
             runtime.ActiveParticipants.Count(),
             question is null ? 0 : runtime.ResponsesFor(question.Id).Count(),
             BuildPhaseUpdate(runtime, forProjector: true),
-            ShowsLeaderboard(runtime) ? BuildLeaderboard(runtime, 5) : null);
+            ShowsLeaderboard(runtime) ? BuildLeaderboard(runtime, 5) : null,
+            runtime.Deck?.ThemeId,
+            runtime.Status == SessionStatus.Running ? runtime.Deck?.ToView(runtime.CurrentIndex) : null);
     }
 
     /// <summary>Tells everyone about a phase change, after saving it so a restart can recover from here.</summary>
@@ -695,6 +737,7 @@ public sealed partial class LiveSessionManager(
                 JoinCode = row.JoinCode,
                 Title = row.Title,
                 Quiz = row.Kind == SessionKind.Quiz ? JsonSerializer.Deserialize<QuizSnapshot>(row.SnapshotJson, Json) : null,
+                Deck = row.Kind == SessionKind.Presentation ? JsonSerializer.Deserialize<PresentationSnapshot>(row.SnapshotJson, Json) : null,
                 Status = row.Status,
                 CurrentIndex = row.CurrentIndex,
                 Phase = row.Phase,

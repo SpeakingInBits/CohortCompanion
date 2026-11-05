@@ -248,6 +248,9 @@ namespace CohortCompanion.Web.Data.Migrations
                     b.Property<DateTime?>("PhaseDeadlineUtc")
                         .HasColumnType("datetime2");
 
+                    b.Property<int?>("PresentationId")
+                        .HasColumnType("int");
+
                     b.Property<int?>("QuizId")
                         .HasColumnType("int");
 

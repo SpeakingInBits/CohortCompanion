@@ -57,6 +57,39 @@ else
                     </div>
                 </div>
             }
+            else if (view.Deck is { } deck)
+            {
+                <div tabindex="0" @onkeydown="OnPresenterKeyAsync" aria-label="Presenter controls. Use the arrow keys to change slides.">
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <span class="text-secondary">Slide @(view.QuestionIndex + 1) of @view.QuestionCount</span>
+                        <span class="d-flex gap-2">
+                            <button type="button" class="btn btn-outline-primary" disabled="@(view.QuestionIndex == 0)" @onclick="() => RunAsync(Manager.PreviousSlideAsync)">Previous</button>
+                            <button type="button" class="btn btn-primary" disabled="@(view.QuestionIndex + 1 >= view.QuestionCount)" @onclick="() => RunAsync(Manager.NextSlideAsync)">Next</button>
+                        </span>
+                    </div>
+                    @if (deck.Current is { } slide)
+                    {
+                        <SlideRenderer Layout="slide.Layout" Content="slide.Content" ThemeId="@deck.ThemeId" />
+                    }
+                    <div class="row g-3 mt-1">
+                        <div class="col-md-5">
+                            <h2 class="h6">Next slide</h2>
+                            @if (deck.Next is { } next)
+                            {
+                                <SlideRenderer Layout="next.Layout" Content="next.Content" ThemeId="@deck.ThemeId" />
+                            }
+                            else
+                            {
+                                <p class="text-secondary">This is the last slide.</p>
+                            }
+                        </div>
+                        <div class="col-md-7">
+                            <h2 class="h6">Speaker notes</h2>
+                            <p style="white-space: pre-wrap">@(string.IsNullOrWhiteSpace(deck.SpeakerNotes) ? "No notes for this slide." : deck.SpeakerNotes)</p>
+                        </div>
+                    </div>
+                </div>
+            }
             else if (view.Phase == QuestionPhase.Finished)
             {
                 <div class="card">
@@ -246,6 +279,19 @@ else
     {
         await command(Id, hostId);
         await RefreshAsync();
+    }
+
+    private async Task OnPresenterKeyAsync(KeyboardEventArgs e)
+    {
+        // Presentation clickers send PageUp and PageDown.
+        if (e.Key is "ArrowRight" or "PageDown" or " ")
+        {
+            await RunAsync(Manager.NextSlideAsync);
+        }
+        else if (e.Key is "ArrowLeft" or "PageUp")
+        {
+            await RunAsync(Manager.PreviousSlideAsync);
+        }
     }
 
     private Task HideAsync(string word) => Manager.HideWordAsync(Id, hostId, word);

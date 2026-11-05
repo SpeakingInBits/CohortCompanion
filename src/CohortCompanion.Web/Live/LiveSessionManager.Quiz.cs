@@ -32,7 +32,13 @@ public sealed partial class LiveSessionManager
                     .ExecuteUpdateAsync(s => s.SetProperty(x => x.StartedAtUtc, now));
             }
 
-            if (IsTimed(runtime))
+            if (runtime.Kind == SessionKind.Presentation)
+            {
+                runtime.Extras.ShownSlides.Add(0);
+                await AnnouncePhaseAsync(runtime);
+                await AnnounceSlideAsync(runtime);
+            }
+            else if (IsTimed(runtime))
             {
                 await OpenCurrentQuestionAsync(runtime);
             }

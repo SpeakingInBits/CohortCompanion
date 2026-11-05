@@ -166,12 +166,11 @@ h1:focus {
     aspect-ratio: 16 / 9;
     width: 100%;
     overflow: hidden;
-    padding: 4cqw 5cqw;
+    padding: 3.5% 5%;
     background: var(--slide-bg);
     color: var(--slide-fg);
     border-radius: 0.25rem;
     box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.12);
-    font-size: 3cqw;
     display: flex;
     flex-direction: column;
     text-align: start;
@@ -185,19 +184,25 @@ h1:focus {
 .slide.background-accent { background: var(--slide-accent); color: var(--slide-accent-fg); }
 .slide.background-plain { background: #ffffff; color: #1f2933; }
 
-.slide-title { font-size: 2em; font-weight: 700; margin: 0 0 0.5em; color: inherit; }
+.slide > * { font-size: 3cqw; }
+.slide-center .slide-body { font-size: 3cqw; }
+.slide-title, .slide > .slide-title { font-size: 5.5cqw; font-weight: 700; margin: 0 0 0.5em; color: inherit; }
 .slide-center { margin: auto; text-align: center; }
-.slide.layout-title .slide-title { font-size: 2.8em; }
+.slide.layout-title .slide-title { font-size: 8cqw; }
 .slide-columns { display: grid; grid-template-columns: 1fr 1fr; gap: 4cqw; flex: 1; }
 .slide-image { flex: 1; min-height: 0; max-width: 100%; object-fit: contain; }
 .slide-caption { margin: 0.5em 0 0; text-align: center; }
 
 /* On a phone the slide reflows instead of shrinking to an unreadable 16:9. */
-.slide.reading { aspect-ratio: auto; min-height: 50vh; font-size: 1.1rem; padding: 1.25rem; }
+.slide.reading { aspect-ratio: auto; min-height: 50vh; padding: 1.25rem; }
+.slide.reading > *, .slide.reading .slide-body { font-size: 1.1rem; }
+.slide.reading .slide-title, .slide.reading > .slide-title { font-size: 1.6rem; }
 .slide.reading .slide-columns { grid-template-columns: 1fr; }
 .slide.reading .slide-image { flex: none; }
 
-.slide.editing { aspect-ratio: auto; min-height: 26rem; font-size: 1rem; padding: 1.5rem; }
+.slide.editing { aspect-ratio: auto; min-height: 26rem; padding: 1.5rem; }
+.slide.editing > * { font-size: 1rem; }
+.slide.editing > .slide-title-input { font-size: 1.8rem; }
 .slide-title-input {
     width: 100%;
     border: 0;
@@ -241,3 +246,15 @@ h1:focus {
 .image-drop:focus-within, .image-drop:hover { border-color: #1b6ec2; }
 .image-drop input[type=file] { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
 .image-drop-preview { max-height: 14rem; max-width: 100%; }
+
+.live-shell.projector:has(.projector-slide) { padding: 0; }
+.projector-slide { position: relative; height: 100vh; display: flex; align-items: center; justify-content: center; background: #000; }
+.projector-slide .slide { max-height: 100vh; max-width: calc(100vh * 16 / 9); border-radius: 0; }
+.projector-join { position: absolute; right: 1rem; bottom: 0.75rem; padding: 0.15rem 0.6rem; border-radius: 0.25rem; background: rgba(0, 0, 0, 0.6); color: #fff; font-size: 1rem; }
+.slide-nav { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; margin-top: 0.75rem; }
+
+/* The rich-text area stays dark-on-white whatever theme the slide around it uses. */
+.slide.editing .rz-html-editor {
+    background: #ffffff;
+    color: #1f2933;
+}

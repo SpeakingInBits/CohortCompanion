@@ -37,6 +37,13 @@
             }
         </div>
     }
+    else if (view.Slide is { } slide)
+    {
+        <div class="projector-slide">
+            <SlideRenderer Layout="slide.Layout" Content="slide.Content" ThemeId="@(view.ThemeId ?? SlideThemes.DefaultTheme)" />
+            <span class="projector-join">Join: <strong>@view.JoinCode</strong></span>
+        </div>
+    }
     else if (view.Phase.Phase == QuestionPhase.Finished)
     {
         <h1 class="text-center mt-5">That's the end of the quiz</h1>
