@@ -6,14 +6,17 @@ using Microsoft.AspNetCore.SignalR.Client;
 
 namespace CohortCompanion.LoadTest;
 
-/// <summary>Starts the limited server, runs a session with simulated students, and reports what it measured.</summary>
+/// <summary>Starts the limited server, runs sessions with simulated students, and reports what it measured.</summary>
 internal static class LoadRunner
 {
     private const int Port = 5090;
-    private const int Questions = 3;
+    private const int Questions = 4;
 
-    /// <summary>The app allows 1000 joins a minute per address, and every student here shares one address.</summary>
-    private const int MaxStudents = 1000;
+    /// <summary>The app allows 3000 joins a minute per address, and every student here shares one address.</summary>
+    private const int JoinsPerMinute = 3000;
+
+    /// <summary>The last question's time limit. It must be longer than <see cref="AnswerSpread"/>.</summary>
+    public const int TimedQuestionSeconds = 10;
 
     private const int WarmUpStudents = 5;
 
@@ -22,17 +25,22 @@ internal static class LoadRunner
 
     private static readonly TimeSpan EventTimeout = TimeSpan.FromSeconds(60);
 
+    /// <summary>How many connections open at once across all classes, so the tool itself doesn't become the bottleneck.</summary>
+    private static readonly SemaphoreSlim Opening = new(100);
+
     private static readonly HttpClient Http = new() { BaseAddress = new Uri($"http://127.0.0.1:{Port}"), Timeout = TimeSpan.FromMinutes(3) };
 
     public static async Task<int> RunAsync(string[] args)
     {
         var students = ArgumentValue(args, "--students", 300);
+        var classes = ArgumentValue(args, "--classes", 1);
+        var staggerSeconds = ArgumentValue(args, "--stagger", 0);
         var databaseDelayMs = ArgumentValue(args, "--db-delay", 0);
         var resultsPath = args.SkipWhile(a => a != "--out").Skip(1).FirstOrDefault();
-        if (students > MaxStudents)
+        var total = students * classes;
+        if (total > JoinsPerMinute)
         {
-            Console.Error.WriteLine($"The app's own rate limit caps one address at {MaxStudents} joins a minute.");
-            return 1;
+            Console.WriteLine($"Note: {total} students is over the app's limit of {JoinsPerMinute} joins a minute per address, so expect refused joins.");
         }
 
         ThreadPool.SetMinThreads(256, 256);
@@ -50,15 +58,27 @@ internal static class LoadRunner
             // First-use costs like JIT compilation shouldn't count: a real server has already been running.
             Console.WriteLine("Warming up...");
             await new SessionRun(WarmUpStudents).ExecuteAsync();
-            if (students + WarmUpStudents > MaxStudents)
+            if (total + WarmUpStudents > JoinsPerMinute)
             {
                 Console.WriteLine("Waiting for the rate limit window to reset...");
                 await Task.Delay(TimeSpan.FromSeconds(61));
             }
 
             await Http.PostAsync("__load/reset-stats", null);
-            Console.WriteLine($"Running with {students} students...");
-            var report = await new SessionRun(students).ExecuteAsync();
+            var label = classes == 1 ? $"{students} students" : $"{classes} classes of {students}";
+            if (staggerSeconds > 0)
+            {
+                label += $", starting within {staggerSeconds} s";
+            }
+
+            Console.WriteLine($"Running {label}...");
+            var random = new Random(1);
+            var reports = await Task.WhenAll(Enumerable.Range(0, classes).Select(async _ =>
+            {
+                await Task.Delay(TimeSpan.FromSeconds(random.NextDouble() * staggerSeconds));
+                return await new SessionRun(students).ExecuteAsync();
+            }));
+            var report = Report.Merge(label, reports);
             report.DatabaseDelayMs = databaseDelayMs;
             var stats = (await Http.GetFromJsonAsync<ResourceStats>("__load/stats"))!;
 
@@ -158,8 +178,9 @@ internal static class LoadRunner
         private readonly EventRecorder recorder = new();
         private readonly List<HubConnection> connections = [];
         private readonly Dictionary<HubConnection, int> connectionOwners = [];
-        private readonly Report report = new(studentCount);
+        private readonly Report report = new($"{studentCount} students");
         private int disconnects;
+        private int joined;
         private readonly string?[] tokens = new string?[studentCount];
         private volatile bool droppingOnPurpose;
 
@@ -168,13 +189,18 @@ internal static class LoadRunner
             var created = (await (await Http.PostAsync($"__load/create?questions={Questions}", null)).Content.ReadFromJsonAsync<SessionCreated>())!;
 
             await JoinEveryoneAsync(created.Code);
+            if (joined == 0)
+            {
+                return report;
+            }
+
             await CommandAsync("start", created.Id);
 
             for (var question = 1; question <= Questions; question++)
             {
-                // The middle round is the worst case: the whole class answers in the same instant.
+                // The second round is the worst case: the whole class answers in the same instant.
                 var spread = question == 2 ? TimeSpan.Zero : AnswerSpread;
-                await RunQuestionAsync(created.Id, question, spread);
+                await RunQuestionAsync(created.Id, question, spread, closesOnTimer: question == Questions);
             }
 
             await ReconnectEveryoneAsync();
@@ -190,19 +216,19 @@ internal static class LoadRunner
             var latencies = new ConcurrentBag<double>();
 
             // Everyone at once is harsher than a real class, who scan the code over half a minute or so.
-            using var opening = new SemaphoreSlim(100);
+            var refused = new ConcurrentBag<HubConnection>();
             await Task.WhenAll(Enumerable.Range(0, studentCount).Select(async index =>
             {
-                await opening.WaitAsync();
+                await Opening.WaitAsync();
+                var connection = Connect(index);
+                lock (connections)
+                {
+                    connections.Add(connection);
+                    connectionOwners[connection] = index;
+                }
+
                 try
                 {
-                    var connection = Connect(index);
-                    lock (connections)
-                    {
-                        connections.Add(connection);
-                        connectionOwners[connection] = index;
-                    }
-
                     var joinStarted = Stopwatch.GetTimestamp();
                     await connection.StartAsync();
                     var result = await connection.InvokeAsync<JoinResult>("Join", code, $"Student{index}");
@@ -211,20 +237,32 @@ internal static class LoadRunner
                     if (result.Error != JoinError.None)
                     {
                         Interlocked.Increment(ref report.JoinFailures);
+                        refused.Add(connection);
                     }
                 }
                 catch (Exception)
                 {
                     Interlocked.Increment(ref report.JoinFailures);
+                    refused.Add(connection);
                 }
                 finally
                 {
-                    opening.Release();
+                    Opening.Release();
                 }
             }));
 
             report.JoinTotal = Stopwatch.GetElapsedTime(started);
             report.Join = latencies.ToList();
+
+            droppingOnPurpose = true;
+            foreach (var connection in refused)
+            {
+                connections.Remove(connection);
+                await connection.DisposeAsync();
+            }
+
+            droppingOnPurpose = false;
+            joined = connections.Count;
         }
 
         private HubConnection Connect(int index)
@@ -253,12 +291,11 @@ internal static class LoadRunner
             droppingOnPurpose = true;
             await Task.WhenAll(connections.Select(c => c.StopAsync()));
 
-            using var opening = new SemaphoreSlim(100);
             var latencies = new ConcurrentBag<double>();
             var started = Stopwatch.GetTimestamp();
             await Task.WhenAll(connections.Select(async (connection, position) =>
             {
-                await opening.WaitAsync();
+                await Opening.WaitAsync();
                 try
                 {
                     var attempt = Stopwatch.GetTimestamp();
@@ -276,7 +313,7 @@ internal static class LoadRunner
                 }
                 finally
                 {
-                    opening.Release();
+                    Opening.Release();
                 }
             }));
 
@@ -285,23 +322,34 @@ internal static class LoadRunner
             droppingOnPurpose = false;
         }
 
-        private async Task RunQuestionAsync(Guid id, int question, TimeSpan spread)
+        private async Task RunQuestionAsync(Guid id, int question, TimeSpan spread, bool closesOnTimer)
         {
             var index = question - 1;
 
             var opened = Stopwatch.GetTimestamp();
             report.Commands.Add((await CommandAsync("open", id)).TotalMilliseconds);
-            report.AddDelivery(report.QuestionDelivery, await recorder.WaitAsync($"{QuestionPhase.Open}:{index}", studentCount, opened, EventTimeout), studentCount);
+            report.AddDelivery(report.QuestionDelivery, await recorder.WaitAsync($"{QuestionPhase.Open}:{index}", joined, opened, EventTimeout), joined);
 
             await SubmitAllAsync(question, spread);
 
-            report.Commands.Add((await CommandAsync("close", id)).TotalMilliseconds);
+            if (closesOnTimer)
+            {
+                // The server allows half a second of grace past the deadline, so that's when this should arrive.
+                var closes = await recorder.WaitAsync($"{QuestionPhase.Closed}:{index}", joined, opened, EventTimeout);
+                var expected = (TimedQuestionSeconds * 1000) + 500;
+                report.AddDelivery(report.TimerLateness, closes.Select(ms => ms - expected).ToList(), joined);
+            }
+            else
+            {
+                report.Commands.Add((await CommandAsync("close", id)).TotalMilliseconds);
+            }
+
             report.Commands.Add((await CommandAsync("show", id)).TotalMilliseconds);
 
             var revealed = Stopwatch.GetTimestamp();
             report.Reveals.Add((await CommandAsync("reveal", id)).TotalMilliseconds);
-            report.AddDelivery(report.RevealDelivery, await recorder.WaitAsync($"{QuestionPhase.AnswerRevealed}:{index}", studentCount, revealed, EventTimeout), studentCount);
-            report.AddDelivery(report.StandingDelivery, await recorder.WaitAsync($"standing:{question}", studentCount, revealed, EventTimeout), studentCount);
+            report.AddDelivery(report.RevealDelivery, await recorder.WaitAsync($"{QuestionPhase.AnswerRevealed}:{index}", joined, revealed, EventTimeout), joined);
+            report.AddDelivery(report.StandingDelivery, await recorder.WaitAsync($"standing:{question}", joined, revealed, EventTimeout), joined);
 
             report.Commands.Add((await CommandAsync("next", id)).TotalMilliseconds);
         }
@@ -372,7 +420,7 @@ internal static class LoadRunner
         }
     }
 
-    private sealed class Report(int students)
+    private sealed class Report(string label)
     {
         public int JoinFailures;
         public int RejoinFailures;
@@ -406,9 +454,48 @@ internal static class LoadRunner
 
         public List<double> Reveals { get; } = [];
 
+        public List<double> TimerLateness { get; } = [];
+
         public List<double> Commands { get; } = [];
 
         public int Failures => JoinFailures + RejoinFailures + AnswerFailures + CommandFailures + MissedEvents + Disconnects;
+
+        /// <summary>Combines each class's report. Durations keep the slowest class.</summary>
+        public static Report Merge(string label, IReadOnlyList<Report> reports)
+        {
+            var merged = new Report(label);
+            foreach (var report in reports)
+            {
+                merged.JoinFailures += report.JoinFailures;
+                merged.RejoinFailures += report.RejoinFailures;
+                merged.AnswerFailures += report.AnswerFailures;
+                merged.CommandFailures += report.CommandFailures;
+                merged.MissedEvents += report.MissedEvents;
+                merged.Disconnects += report.Disconnects;
+                merged.JoinTotal = TimeSpan.FromTicks(Math.Max(merged.JoinTotal.Ticks, report.JoinTotal.Ticks));
+                merged.RejoinTotal = TimeSpan.FromTicks(Math.Max(merged.RejoinTotal.Ticks, report.RejoinTotal.Ticks));
+                merged.End = TimeSpan.FromTicks(Math.Max(merged.End.Ticks, report.End.Ticks));
+                merged.Join.AddRange(report.Join);
+                merged.Rejoin.AddRange(report.Rejoin);
+                merged.QuestionDelivery.AddRange(report.QuestionDelivery);
+                merged.RevealDelivery.AddRange(report.RevealDelivery);
+                merged.StandingDelivery.AddRange(report.StandingDelivery);
+                merged.Reveals.AddRange(report.Reveals);
+                merged.Commands.AddRange(report.Commands);
+                merged.TimerLateness.AddRange(report.TimerLateness);
+                foreach (var value in report.SpreadAnswers)
+                {
+                    merged.SpreadAnswers.Add(value);
+                }
+
+                foreach (var value in report.BurstAnswers)
+                {
+                    merged.BurstAnswers.Add(value);
+                }
+            }
+
+            return merged;
+        }
 
         public void AddDelivery(List<double> target, List<double> times, int expected)
         {
@@ -417,7 +504,7 @@ internal static class LoadRunner
         }
 
         public string Format(ResourceStats stats) => string.Join(Environment.NewLine,
-            $"## {students} students" + (DatabaseDelayMs > 0 ? $", {DatabaseDelayMs} ms added to each database command" : ""),
+            $"## {label}" + (DatabaseDelayMs > 0 ? $", {DatabaseDelayMs} ms added to each database command" : ""),
             "",
             "| Measure | Median | 95th percentile | Worst |",
             "|---|---|---|---|",
@@ -430,8 +517,9 @@ internal static class LoadRunner
             Row("Reveal command", Reveals),
             Row("Other instructor commands", Commands),
             Row("Reconnect after everyone drops at once", Rejoin),
+            Row("Timer closes a question late by", TimerLateness),
             "",
-            $"- Everyone joined in {JoinTotal.TotalSeconds:0.0} s and reconnected in {RejoinTotal.TotalSeconds:0.0} s. Ending the session took {End.TotalMilliseconds:0} ms.",
+            $"- The slowest class joined in {JoinTotal.TotalSeconds:0.0} s and reconnected in {RejoinTotal.TotalSeconds:0.0} s. Ending a session took up to {End.TotalMilliseconds:0} ms.",
             $"- Server CPU: average {stats.AverageCpuPercent:0}%, peak {stats.PeakCpuPercent:0}% of its one core.",
             $"- Server memory: peak working set {stats.PeakWorkingSetMb:0} MB, peak managed heap {stats.PeakManagedHeapMb:0} MB.",
             $"- Failures: {JoinFailures} joins, {RejoinFailures} reconnects, {AnswerFailures} answers, {CommandFailures} commands, {MissedEvents} missed events, {Disconnects} disconnects.",

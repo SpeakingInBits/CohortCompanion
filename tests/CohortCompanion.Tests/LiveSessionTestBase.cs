@@ -28,10 +28,13 @@ public sealed class FakeBroadcaster : ISessionBroadcaster
         return Task.CompletedTask;
     }
 
+    /// <summary>Set to make broadcasts for one session hang, as a slow command would.</summary>
+    public (Guid Session, Task Release)? Hold { get; set; }
+
     public Task ToProjectorAsync(Guid sessionId, string method, object? argument)
     {
         ToProjector.Add((method, argument));
-        return Task.CompletedTask;
+        return Hold is { } hold && hold.Session == sessionId ? hold.Release : Task.CompletedTask;
     }
 
     public Task ToConnectionAsync(string connectionId, string method, object? argument)

@@ -56,6 +56,7 @@ internal static class LoadServer
             builder.UseSetting("ConnectionStrings:DefaultConnection", ConnectionString);
             builder.UseSetting("Database:MigrateOnStartup", "true");
             builder.UseSetting("Logging:LogLevel:Default", "Warning");
+            builder.UseSetting("Logging:LogLevel:Microsoft.EntityFrameworkCore.Infrastructure", "Information");
             builder.ConfigureServices(services =>
             {
                 services.AddSingleton<IStartupFilter>(new ControlEndpoints(sampler, stopped));
@@ -159,6 +160,8 @@ internal static class LoadServer
                 Order = i,
                 Type = QuestionType.MultipleChoice,
                 Prompt = $"<p>Question {i + 1}: which keyword declares a constant in C#?</p>",
+                // The last question closes on its timer, which shows how late the background tick runs.
+                TimeLimitSeconds = i == questions - 1 ? LoadRunner.TimedQuestionSeconds : null,
                 Options =
                 [
                     new ChoiceOption { Order = 0, Text = "const", IsCorrect = true },
