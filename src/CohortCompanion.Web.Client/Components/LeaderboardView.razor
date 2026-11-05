@@ -1,0 +1,18 @@
+@* The top of the class on the projector. Nobody's low score is ever shown publicly. *@
+
+<h2 class="mt-4">@(Podium ? "Final podium" : "Leaderboard")</h2>
+<ol class="list-unstyled">
+    @foreach (var entry in Podium ? Entries.Take(3) : Entries)
+    {
+        <li class="d-flex justify-content-between border-bottom py-1">
+            <span>@entry.Rank. @entry.Nickname</span>
+            <strong>@entry.Score</strong>
+        </li>
+    }
+</ol>
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<LeaderboardEntry> Entries { get; set; } = [];
+
+    [Parameter] public bool Podium { get; set; }
+}

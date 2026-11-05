@@ -64,6 +64,8 @@ internal sealed class RuntimeExtras
     /// <summary>Time left on the clock while paused.</summary>
     public int? PausedRemainingMs { get; set; }
 
+    public DateTime? PausedAtUtc { get; set; }
+
     /// <summary>Normalized words the instructor hid, by question id.</summary>
     public Dictionary<int, HashSet<string>> HiddenWords { get; set; } = [];
 

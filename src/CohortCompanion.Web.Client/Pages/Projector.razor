@@ -40,6 +40,10 @@
     else if (view.Phase.Phase == QuestionPhase.Finished)
     {
         <h1 class="text-center mt-5">That's the end of the quiz</h1>
+        @if (view.Leaderboard is { Count: > 0 } podium)
+        {
+            <LeaderboardView Entries="podium" Podium="true" />
+        }
     }
     else if (view.Phase.Question is { } question)
     {
@@ -63,6 +67,10 @@
         @if (view.Phase.Results is { } results)
         {
             <ResultsView Results="results" />
+            @if (view.Leaderboard is { Count: > 0 } leaderboard)
+            {
+                <LeaderboardView Entries="leaderboard" />
+            }
         }
         else if (question.Options.Count > 0)
         {

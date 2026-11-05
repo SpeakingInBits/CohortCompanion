@@ -1,0 +1,23 @@
+@* A student's own score and rank. Only that student ever sees this. *@
+
+<div class="alert @(Final ? "alert-primary" : Standing.LastAnswerCorrect == true ? "alert-success" : "alert-secondary") mt-3 text-center" role="status">
+    @if (!Final && Standing.LastAnswerCorrect is { } correct)
+    {
+        <div class="fw-semibold">@(correct ? "Correct!" : "Not this time")</div>
+        @if (Standing.LastQuestionScore > 0)
+        {
+            <div>+@Standing.LastQuestionScore points</div>
+        }
+    }
+    <div>Your score: <strong>@Standing.Score</strong></div>
+    @if (Standing.Rank is { } rank)
+    {
+        <div>You're number @rank of @Standing.ParticipantCount</div>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public Standing Standing { get; set; } = default!;
+
+    [Parameter] public bool Final { get; set; }
+}

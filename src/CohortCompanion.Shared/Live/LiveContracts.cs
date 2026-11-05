@@ -73,7 +73,8 @@ public sealed record QuestionResults(
     int ResponseCount,
     IReadOnlyList<OptionResult>? Options = null,
     IReadOnlyList<WordCount>? Words = null,
-    IReadOnlyList<BlankResult>? Blanks = null);
+    IReadOnlyList<BlankResult>? Blanks = null,
+    double? AverageScore = null);
 
 /// <summary>Sent to every student when the phase changes, so it holds nothing specific to one student.</summary>
 public sealed record PhaseUpdate(
@@ -92,7 +93,8 @@ public sealed record StudentSessionState(
     string Title,
     string Nickname,
     PhaseUpdate Phase,
-    AnswerPayload? MyAnswer);
+    AnswerPayload? MyAnswer,
+    Standing? MyStanding);
 
 public sealed record ProjectorState(
     string Title,
@@ -101,7 +103,15 @@ public sealed record ProjectorState(
     IReadOnlyList<string> Nicknames,
     int ParticipantCount,
     int ResponseCount,
-    PhaseUpdate Phase);
+    PhaseUpdate Phase,
+    IReadOnlyList<LeaderboardEntry>? Leaderboard);
+
+public sealed record LeaderboardEntry(int Rank, string Nickname, int Score);
+
+/// <summary>
+/// One student's own position, sent only to that student. <c>Rank</c> is null unless the quiz shows a leaderboard.
+/// </summary>
+public sealed record Standing(int Score, int? Rank, int ParticipantCount, int LastQuestionScore, bool? LastAnswerCorrect);
 
 /// <summary>SignalR method names, shared so the server and client can't drift apart.</summary>
 public static class HubEvents
@@ -111,6 +121,7 @@ public static class HubEvents
     public const string SessionState = nameof(SessionState);
     public const string PhaseChanged = nameof(PhaseChanged);
     public const string ResultsUpdated = nameof(ResultsUpdated);
+    public const string LeaderboardUpdated = nameof(LeaderboardUpdated);
     public const string NicknameChanged = nameof(NicknameChanged);
     public const string ParticipantRemoved = nameof(ParticipantRemoved);
     public const string SessionEnded = nameof(SessionEnded);

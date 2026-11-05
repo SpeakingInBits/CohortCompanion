@@ -88,6 +88,17 @@ else
                         }
 
                         <div class="d-flex flex-wrap gap-2 mb-3">
+                            @if (view.IsTimed)
+                            {
+                                @if (view.Phase == QuestionPhase.Open)
+                                {
+                                    <button type="button" class="btn btn-outline-primary" @onclick="() => RunAsync(view.IsPaused ? Manager.ResumeTimerAsync : Manager.PauseTimerAsync)">@(view.IsPaused ? "Resume" : "Pause")</button>
+                                    <button type="button" class="btn btn-outline-primary" @onclick="() => Manager.ExtendTimerAsync(Id, hostId, 10)">Add 10 seconds</button>
+                                }
+                                <button type="button" class="btn btn-outline-secondary" @onclick="() => RunAsync(Manager.SkipAsync)">Skip</button>
+                            }
+                            else
+                            {
                             @switch (view.Phase)
                             {
                                 case QuestionPhase.Waiting:
@@ -110,12 +121,13 @@ else
                                     <button type="button" class="btn btn-primary" @onclick="() => RunAsync(Manager.NextAsync)">@NextLabel</button>
                                     break;
                             }
+                            }
                         </div>
 
                         @if (view.LiveResults is { } results)
                         {
                             <h2 class="h6 text-secondary">Only you can see this until you show results</h2>
-                            <ResultsView Results="results" OnHide="HideAsync" />
+                            <ResultsView Results="results" OnHide="HideAsync" OnAccept="AcceptAsync" />
                         }
                     </div>
                 </div>
@@ -123,6 +135,18 @@ else
         </div>
 
         <div class="col-lg-4">
+            @if (view.Leaderboard is { Count: > 0 } leaderboard)
+            {
+                <h2 class="h5">Top scores</h2>
+                <p class="form-text">Rename or remove anyone before the class sees this.</p>
+                <ol class="ps-3">
+                    @foreach (var entry in leaderboard)
+                    {
+                        <li>@entry.Nickname: @entry.Score</li>
+                    }
+                </ol>
+            }
+
             <h2 class="h5">Participants (@view.Participants.Count)</h2>
             @if (view.Participants.Count == 0)
             {
@@ -225,6 +249,8 @@ else
     }
 
     private Task HideAsync(string word) => Manager.HideWordAsync(Id, hostId, word);
+
+    private Task AcceptAsync((int Blank, string Text) answer) => Manager.AcceptAnswerAsync(Id, hostId, answer.Blank, answer.Text);
 
     private void BeginRename(ParticipantView participant)
     {
