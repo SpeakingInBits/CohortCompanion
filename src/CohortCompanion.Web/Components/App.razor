@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 
 <head>
@@ -7,6 +7,11 @@
     <base href="/" />
     <ResourcePreloader />
     <link rel="stylesheet" href="@Assets["lib/bootstrap/dist/css/bootstrap.min.css"]" />
+    @if (!IsStudentPage)
+    {
+        <link rel="stylesheet" href="@Assets["_content/Radzen.Blazor/css/default-base.css"]" />
+    }
+    <link rel="stylesheet" href="@Assets["lib/highlight/atom-one-dark.min.css"]" />
     <link rel="stylesheet" href="@Assets["app.css"]" />
     <link rel="stylesheet" href="@Assets["CohortCompanion.Web.styles.css"]" />
     <ImportMap />
@@ -17,8 +22,22 @@
 <body>
     <Routes />
     <ReconnectModal />
+    <script src="@Assets["lib/highlight/highlight.min.js"]"></script>
+    <script src="@Assets["js/cc.js"]"></script>
+    @if (!IsStudentPage)
+    {
+        <script src="@Assets["_content/Radzen.Blazor/Radzen.Blazor.js"]"></script>
+    }
     <script src="@Assets["_framework/blazor.web.js"]"></script>
     <script src="@Assets["Components/Account/Shared/PasskeySubmit.razor.js"]" type="module"></script>
 </body>
 
 </html>
+
+@code {
+    [CascadingParameter] private HttpContext HttpContext { get; set; } = default!;
+
+    // Student pages stay light: the instructor-only component library isn't sent to phones.
+    private bool IsStudentPage => HttpContext.Request.Path.StartsWithSegments("/j")
+        || HttpContext.Request.Path.StartsWithSegments("/join");
+}

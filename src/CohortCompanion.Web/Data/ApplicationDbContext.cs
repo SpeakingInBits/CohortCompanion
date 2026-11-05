@@ -7,9 +7,45 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
 {
     public DbSet<InviteCode> InviteCodes => Set<InviteCode>();
 
+    public DbSet<Quiz> Quizzes => Set<Quiz>();
+
+    public DbSet<Question> Questions => Set<Question>();
+
     protected override void OnModelCreating(ModelBuilder builder)
     {
         base.OnModelCreating(builder);
+
+        builder.Entity<Quiz>(quiz =>
+        {
+            quiz.Property(q => q.Title).HasMaxLength(200);
+            quiz.HasIndex(q => q.OwnerId);
+            quiz.HasOne(q => q.Owner)
+                .WithMany()
+                .HasForeignKey(q => q.OwnerId)
+                .OnDelete(DeleteBehavior.Restrict);
+            quiz.HasMany(q => q.Questions)
+                .WithOne()
+                .HasForeignKey(q => q.QuizId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        builder.Entity<Question>(question =>
+        {
+            question.Property(q => q.CodeLanguage).HasMaxLength(30);
+            question.Property(q => q.ImageUrl).HasMaxLength(500);
+            question.HasMany(q => q.Options)
+                .WithOne()
+                .HasForeignKey(o => o.QuestionId)
+                .OnDelete(DeleteBehavior.Cascade);
+            question.HasMany(q => q.BlankAnswers)
+                .WithOne()
+                .HasForeignKey(a => a.QuestionId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        builder.Entity<ChoiceOption>(option => option.Property(o => o.Text).HasMaxLength(500));
+
+        builder.Entity<BlankAnswer>(answer => answer.Property(a => a.AcceptedText).HasMaxLength(200));
 
         builder.Entity<ApplicationUser>(user =>
         {

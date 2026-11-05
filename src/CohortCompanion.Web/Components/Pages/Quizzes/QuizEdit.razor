@@ -1,0 +1,230 @@
+@page "/quizzes/{Id:int}/edit"
+@attribute [Authorize(Roles = Roles.Instructor)]
+@rendermode InteractiveServer
+
+@using System.Security.Claims
+@using CohortCompanion.Shared
+@using CohortCompanion.Web.Data
+@using CohortCompanion.Web.Quizzes
+
+@inject QuizService Quizzes
+@implements IDisposable
+@inject NavigationManager NavigationManager
+
+<PageTitle>Edit quiz</PageTitle>
+
+@if (notFound)
+{
+    <h1>Quiz not found</h1>
+    <p><a href="quizzes">Back to your quizzes</a></p>
+}
+else if (quiz is null)
+{
+    <p><em>Loading…</em></p>
+}
+else
+{
+    <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
+        <h1 class="me-auto mb-0">@(string.IsNullOrWhiteSpace(quiz.Title) ? "Untitled quiz" : quiz.Title)</h1>
+        <span class="text-secondary" role="status">@status</span>
+        <a class="btn btn-outline-secondary" href="quizzes">Back</a>
+        <button type="button" class="btn btn-primary" disabled="@saving" @onclick="SaveAsync">Save</button>
+    </div>
+
+    <div class="card mb-4">
+        <div class="card-body">
+            <h2 class="h5 card-title">Settings</h2>
+            <div class="row g-3">
+                <div class="col-md-6">
+                    <label for="title" class="form-label">Title</label>
+                    <input id="title" class="form-control" maxlength="200" @bind="quiz.Title" @bind:after="MarkDirty" />
+                </div>
+                <div class="col-md-3">
+                    <label for="mode" class="form-label">Pacing</label>
+                    <select id="mode" class="form-select" @bind="quiz.Mode" @bind:after="MarkDirty">
+                        <option value="@QuizMode.InstructorPaced">Instructor-paced</option>
+                        <option value="@QuizMode.Timed">Timed</option>
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label for="default-limit" class="form-label">Default time limit (seconds)</label>
+                    <input id="default-limit" type="number" class="form-control" min="@QuizRules.MinTimeLimitSeconds" max="@QuizRules.MaxTimeLimitSeconds"
+                           @bind="quiz.DefaultTimeLimitSeconds" @bind:after="MarkDirty" />
+                </div>
+                @if (quiz.Mode == QuizMode.Timed)
+                {
+                    <div class="col-md-3">
+                        <label for="results-seconds" class="form-label">Show results for (seconds)</label>
+                        <input id="results-seconds" type="number" class="form-control" min="1" max="60"
+                               @bind="quiz.ResultsDisplaySeconds" @bind:after="MarkDirty" />
+                    </div>
+                }
+                <div class="col-12">
+                    <div class="form-check form-check-inline">
+                        <input id="scoring" class="form-check-input" type="checkbox" @bind="quiz.ScoringEnabled" @bind:after="MarkDirty" />
+                        <label class="form-check-label" for="scoring">Keep score</label>
+                    </div>
+                    <div class="form-check form-check-inline">
+                        <input id="speed" class="form-check-input" type="checkbox" disabled="@(!quiz.ScoringEnabled)"
+                               @bind="quiz.SpeedBonusEnabled" @bind:after="MarkDirty" />
+                        <label class="form-check-label" for="speed">Speed bonus</label>
+                    </div>
+                    <div class="form-check form-check-inline">
+                        <input id="leaderboard" class="form-check-input" type="checkbox" disabled="@(!quiz.ScoringEnabled)"
+                               @bind="quiz.ShowLeaderboard" @bind:after="MarkDirty" />
+                        <label class="form-check-label" for="leaderboard">Show leaderboard</label>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    @for (var i = 0; i < quiz.Questions.Count; i++)
+    {
+        var index = i;
+        var question = quiz.Questions[index];
+        <QuestionEditor @key="question"
+                        Question="question"
+                        Number="index + 1"
+                        IsFirst="index == 0"
+                        IsLast="index == quiz.Questions.Count - 1"
+                        OnChanged="MarkDirty"
+                        OnMove="delta => Move(index, delta)"
+                        OnRemove="() => Remove(index)" />
+    }
+
+    <div class="d-flex flex-wrap gap-2 mb-4">
+        <button type="button" class="btn btn-outline-primary" @onclick="() => Add(QuestionType.MultipleChoice)">Add multiple choice</button>
+        <button type="button" class="btn btn-outline-primary" @onclick="() => Add(QuestionType.WordCloud)">Add word cloud</button>
+        <button type="button" class="btn btn-outline-primary" @onclick="() => Add(QuestionType.FillInBlank)">Add fill in the blank</button>
+    </div>
+
+    @if (problems.Count > 0)
+    {
+        <div class="alert alert-warning" role="status">
+            <p class="mb-1"><strong>Fix these before running this quiz live:</strong></p>
+            <ul class="mb-0">
+                @foreach (var problem in problems)
+                {
+                    <li>@problem</li>
+                }
+            </ul>
+        </div>
+    }
+}
+
+@code {
+    [Parameter] public int Id { get; set; }
+
+    [CascadingParameter] private Task<AuthenticationState> AuthState { get; set; } = default!;
+
+    private Quiz? quiz;
+    private string ownerId = "";
+    private bool notFound;
+    private bool saving;
+    private string status = "";
+    private IReadOnlyList<string> problems = [];
+    private IDisposable? navigationGuard;
+    private bool dirty;
+
+    protected override async Task OnInitializedAsync()
+    {
+        ownerId = (await AuthState).User.FindFirstValue(ClaimTypes.NameIdentifier)!;
+        await LoadAsync();
+    }
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (firstRender)
+        {
+            navigationGuard = NavigationManager.RegisterLocationChangingHandler(context =>
+            {
+                if (dirty)
+                {
+                    status = "You have unsaved changes. Save first, or leave again to discard them.";
+                    dirty = false;
+                    context.PreventNavigation();
+                    StateHasChanged();
+                }
+
+                return ValueTask.CompletedTask;
+            });
+        }
+    }
+
+    private async Task LoadAsync()
+    {
+        quiz = await Quizzes.GetAsync(Id, ownerId);
+        notFound = quiz is null;
+        if (quiz is not null)
+        {
+            problems = QuizRules.Validate(quiz);
+        }
+    }
+
+    private void MarkDirty()
+    {
+        dirty = true;
+        status = "Unsaved changes";
+        problems = QuizRules.Validate(quiz!);
+    }
+
+    private void Add(QuestionType type)
+    {
+        var question = new Question { Type = type, Order = quiz!.Questions.Count };
+        if (type == QuestionType.MultipleChoice)
+        {
+            question.Options = [new ChoiceOption { Order = 0 }, new ChoiceOption { Order = 1 }];
+        }
+
+        quiz.Questions.Add(question);
+        MarkDirty();
+    }
+
+    private void Move(int index, int delta)
+    {
+        var questions = quiz!.Questions;
+        (questions[index], questions[index + delta]) = (questions[index + delta], questions[index]);
+        Renumber();
+        MarkDirty();
+    }
+
+    private void Remove(int index)
+    {
+        quiz!.Questions.RemoveAt(index);
+        Renumber();
+        MarkDirty();
+    }
+
+    private void Renumber()
+    {
+        for (var i = 0; i < quiz!.Questions.Count; i++)
+        {
+            quiz.Questions[i].Order = i;
+        }
+    }
+
+    private async Task SaveAsync()
+    {
+        saving = true;
+        try
+        {
+            if (await Quizzes.SaveAsync(quiz!, ownerId))
+            {
+                await LoadAsync();
+                dirty = false;
+                status = "All changes saved";
+            }
+            else
+            {
+                status = "This quiz no longer exists.";
+            }
+        }
+        finally
+        {
+            saving = false;
+        }
+    }
+
+    public void Dispose() => navigationGuard?.Dispose();
+}

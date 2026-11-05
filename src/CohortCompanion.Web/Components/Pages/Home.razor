@@ -8,7 +8,7 @@
 
 <AuthorizeView Roles="@Roles.Instructor">
     <Authorized>
-        <p>Welcome back, @context.User.Identity?.Name. Presentations and quizzes are on the way.</p>
+        <p>Welcome back, @context.User.Identity?.Name. <a href="quizzes">Go to your quizzes</a>.</p>
     </Authorized>
     <NotAuthorized>
         <p>

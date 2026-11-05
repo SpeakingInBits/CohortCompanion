@@ -1,0 +1,135 @@
+@page "/quizzes"
+@attribute [Authorize(Roles = Roles.Instructor + "," + Roles.Admin)]
+@rendermode InteractiveServer
+
+@using System.Security.Claims
+@using CohortCompanion.Web.Quizzes
+
+@inject QuizService Quizzes
+@inject NavigationManager NavigationManager
+
+<PageTitle>Quizzes</PageTitle>
+
+<h1>Quizzes</h1>
+
+<form class="row g-2 mb-4" style="max-width: 36rem" @onsubmit="CreateAsync">
+    <div class="col">
+        <label for="new-title" class="visually-hidden">New quiz title</label>
+        <input id="new-title" class="form-control" placeholder="New quiz title" maxlength="200" @bind="newTitle" @bind:event="oninput" />
+    </div>
+    <div class="col-auto">
+        <button type="submit" class="btn btn-primary" disabled="@string.IsNullOrWhiteSpace(newTitle)">Create quiz</button>
+    </div>
+</form>
+
+@if (isAdmin)
+{
+    <div class="form-check mb-3">
+        <input id="show-all" class="form-check-input" type="checkbox" checked="@showAll" @onchange="ToggleAllAsync" />
+        <label class="form-check-label" for="show-all">Show every instructor's quizzes</label>
+    </div>
+}
+
+@if (quizzes is null)
+{
+    <p><em>Loading…</em></p>
+}
+else if (quizzes.Count == 0)
+{
+    <p>No quizzes yet. Give your first one a title above.</p>
+}
+else
+{
+    <div class="table-responsive">
+        <table class="table align-middle">
+            <thead>
+                <tr>
+                    <th>Title</th>
+                    <th>Pacing</th>
+                    <th>Questions</th>
+                    @if (showAll)
+                    {
+                        <th>Owner</th>
+                    }
+                    <th>Updated</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var quiz in quizzes)
+                {
+                    <tr>
+                        <td>@quiz.Title</td>
+                        <td>@(quiz.Mode == CohortCompanion.Shared.QuizMode.Timed ? "Timed" : "Instructor-paced")</td>
+                        <td>@quiz.QuestionCount</td>
+                        @if (showAll)
+                        {
+                            <td>@quiz.OwnerName</td>
+                        }
+                        <td>@quiz.UpdatedAtUtc.ToString("yyyy-MM-dd HH:mm") UTC</td>
+                        <td class="text-end text-nowrap">
+                            @if (!showAll)
+                            {
+                                <a class="btn btn-sm btn-outline-primary" href="quizzes/@quiz.Id/edit">Edit</a>
+                            }
+                            @if (pendingDelete == quiz.Id)
+                            {
+                                <button type="button" class="btn btn-sm btn-danger" @onclick="() => DeleteAsync(quiz.Id)">Confirm delete</button>
+                                <button type="button" class="btn btn-sm btn-link" @onclick="() => pendingDelete = null">Cancel</button>
+                            }
+                            else
+                            {
+                                <button type="button" class="btn btn-sm btn-outline-danger" @onclick="() => pendingDelete = quiz.Id">Delete</button>
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+
+@code {
+    [CascadingParameter] private Task<AuthenticationState> AuthState { get; set; } = default!;
+
+    private List<QuizListItem>? quizzes;
+    private string userId = "";
+    private bool isAdmin;
+    private bool showAll;
+    private string? newTitle;
+    private int? pendingDelete;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var user = (await AuthState).User;
+        userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
+        isAdmin = user.IsInRole(Roles.Admin);
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync() => quizzes = await Quizzes.ListAsync(showAll && isAdmin ? null : userId);
+
+    private async Task ToggleAllAsync(ChangeEventArgs e)
+    {
+        showAll = e.Value is true;
+        await LoadAsync();
+    }
+
+    private async Task CreateAsync()
+    {
+        if (string.IsNullOrWhiteSpace(newTitle))
+        {
+            return;
+        }
+
+        var quiz = await Quizzes.CreateAsync(userId, newTitle);
+        NavigationManager.NavigateTo($"quizzes/{quiz.Id}/edit");
+    }
+
+    private async Task DeleteAsync(int id)
+    {
+        await Quizzes.DeleteAsync(id, userId, isAdmin);
+        pendingDelete = null;
+        await LoadAsync();
+    }
+}

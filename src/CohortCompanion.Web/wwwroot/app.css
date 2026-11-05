@@ -58,3 +58,19 @@ h1:focus {
 .form-floating > .form-control-plaintext:focus::placeholder, .form-floating > .form-control:focus::placeholder {
     text-align: start;
 }
+
+.code-block {
+    margin: 0;
+    border-radius: 0.375rem;
+    overflow-x: auto;
+    font-size: 0.95em;
+}
+
+.code-block code.hljs {
+    display: block;
+    padding: 0.75rem 1rem;
+}
+
+.form-check-input {
+    border-color: #929292;
+}

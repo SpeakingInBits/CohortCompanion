@@ -101,6 +101,67 @@ namespace CohortCompanion.Web.Data.Migrations
                     b.ToTable("AspNetUsers", (string)null);
                 });
 
+            modelBuilder.Entity("CohortCompanion.Web.Data.BlankAnswer", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("AcceptedText")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<int>("BlankIndex")
+                        .HasColumnType("int");
+
+                    b.Property<int>("MatchMode")
+                        .HasColumnType("int");
+
+                    b.Property<int>("QuestionId")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("QuestionId");
+
+                    b.ToTable("BlankAnswer");
+                });
+
+            modelBuilder.Entity("CohortCompanion.Web.Data.ChoiceOption", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("CodeSnippet")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<bool>("IsCorrect")
+                        .HasColumnType("bit");
+
+                    b.Property<int>("Order")
+                        .HasColumnType("int");
+
+                    b.Property<int>("QuestionId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Text")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("QuestionId");
+
+                    b.ToTable("ChoiceOption");
+                });
+
             modelBuilder.Entity("CohortCompanion.Web.Data.InviteCode", b =>
                 {
                     b.Property<int>("Id")
@@ -149,6 +210,108 @@ namespace CohortCompanion.Web.Data.Migrations
                     b.HasIndex("CreatedById");
 
                     b.ToTable("InviteCodes");
+                });
+
+            modelBuilder.Entity("CohortCompanion.Web.Data.Question", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<bool>("AllowMultipleSelect")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("CodeLanguage")
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
+                    b.Property<string>("CodeSnippet")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("ImageUrl")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<int>("MaxEntries")
+                        .HasColumnType("int");
+
+                    b.Property<int>("Order")
+                        .HasColumnType("int");
+
+                    b.Property<bool>("PartialCredit")
+                        .HasColumnType("bit");
+
+                    b.Property<int>("Points")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Prompt")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<int>("QuizId")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("TimeLimitSeconds")
+                        .HasColumnType("int");
+
+                    b.Property<int>("Type")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("QuizId");
+
+                    b.ToTable("Questions");
+                });
+
+            modelBuilder.Entity("CohortCompanion.Web.Data.Quiz", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int?>("DefaultTimeLimitSeconds")
+                        .HasColumnType("int");
+
+                    b.Property<int>("Mode")
+                        .HasColumnType("int");
+
+                    b.Property<string>("OwnerId")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<int>("ResultsDisplaySeconds")
+                        .HasColumnType("int");
+
+                    b.Property<bool>("ScoringEnabled")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("ShowLeaderboard")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("SpeedBonusEnabled")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<DateTime>("UpdatedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OwnerId");
+
+                    b.ToTable("Quizzes");
                 });
 
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityRole", b =>
@@ -315,6 +478,24 @@ namespace CohortCompanion.Web.Data.Migrations
                     b.Navigation("InviteCode");
                 });
 
+            modelBuilder.Entity("CohortCompanion.Web.Data.BlankAnswer", b =>
+                {
+                    b.HasOne("CohortCompanion.Web.Data.Question", null)
+                        .WithMany("BlankAnswers")
+                        .HasForeignKey("QuestionId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("CohortCompanion.Web.Data.ChoiceOption", b =>
+                {
+                    b.HasOne("CohortCompanion.Web.Data.Question", null)
+                        .WithMany("Options")
+                        .HasForeignKey("QuestionId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("CohortCompanion.Web.Data.InviteCode", b =>
                 {
                     b.HasOne("CohortCompanion.Web.Data.ApplicationUser", "CreatedBy")
@@ -324,6 +505,26 @@ namespace CohortCompanion.Web.Data.Migrations
                         .IsRequired();
 
                     b.Navigation("CreatedBy");
+                });
+
+            modelBuilder.Entity("CohortCompanion.Web.Data.Question", b =>
+                {
+                    b.HasOne("CohortCompanion.Web.Data.Quiz", null)
+                        .WithMany("Questions")
+                        .HasForeignKey("QuizId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("CohortCompanion.Web.Data.Quiz", b =>
+                {
+                    b.HasOne("CohortCompanion.Web.Data.ApplicationUser", "Owner")
+                        .WithMany()
+                        .HasForeignKey("OwnerId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Owner");
                 });
 
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityRoleClaim<string>", b =>
@@ -431,6 +632,18 @@ namespace CohortCompanion.Web.Data.Migrations
             modelBuilder.Entity("CohortCompanion.Web.Data.InviteCode", b =>
                 {
                     b.Navigation("RedeemedBy");
+                });
+
+            modelBuilder.Entity("CohortCompanion.Web.Data.Question", b =>
+                {
+                    b.Navigation("BlankAnswers");
+
+                    b.Navigation("Options");
+                });
+
+            modelBuilder.Entity("CohortCompanion.Web.Data.Quiz", b =>
+                {
+                    b.Navigation("Questions");
                 });
 #pragma warning restore 612, 618
         }
