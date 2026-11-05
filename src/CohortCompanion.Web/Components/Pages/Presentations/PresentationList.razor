@@ -1,0 +1,133 @@
+@page "/presentations"
+@attribute [Authorize(Roles = Roles.Instructor + "," + Roles.Admin)]
+@rendermode InteractiveServer
+
+@using System.Security.Claims
+@using CohortCompanion.Web.Presentations
+
+@inject PresentationService Presentations
+@inject NavigationManager NavigationManager
+
+<PageTitle>Presentations</PageTitle>
+
+<h1>Presentations</h1>
+
+<form class="row g-2 mb-4" style="max-width: 36rem" @onsubmit="CreateAsync">
+    <div class="col">
+        <label for="new-title" class="visually-hidden">New presentation title</label>
+        <input id="new-title" class="form-control" placeholder="New presentation title" maxlength="200" @bind="newTitle" @bind:event="oninput" />
+    </div>
+    <div class="col-auto">
+        <button type="submit" class="btn btn-primary" disabled="@string.IsNullOrWhiteSpace(newTitle)">Create presentation</button>
+    </div>
+</form>
+
+@if (isAdmin)
+{
+    <div class="form-check mb-3">
+        <input id="show-all" class="form-check-input" type="checkbox" checked="@showAll" @onchange="ToggleAllAsync" />
+        <label class="form-check-label" for="show-all">Show every instructor's presentations</label>
+    </div>
+}
+
+@if (items is null)
+{
+    <p><em>Loading…</em></p>
+}
+else if (items.Count == 0)
+{
+    <p>No presentations yet. Give your first one a title above.</p>
+}
+else
+{
+    <div class="table-responsive">
+        <table class="table align-middle">
+            <thead>
+                <tr>
+                    <th>Title</th>
+                    <th>Slides</th>
+                    @if (showAll)
+                    {
+                        <th>Owner</th>
+                    }
+                    <th>Updated</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var item in items)
+                {
+                    <tr>
+                        <td>@item.Title</td>
+                        <td>@item.SlideCount</td>
+                        @if (showAll)
+                        {
+                            <td>@item.OwnerName</td>
+                        }
+                        <td>@item.UpdatedAtUtc.ToString("yyyy-MM-dd HH:mm") UTC</td>
+                        <td class="text-end text-nowrap">
+                            @if (!showAll)
+                            {
+                                <a class="btn btn-sm btn-outline-primary" href="presentations/@item.Id/edit">Edit</a>
+                            }
+                            @if (pendingDelete == item.Id)
+                            {
+                                <button type="button" class="btn btn-sm btn-danger" @onclick="() => DeleteAsync(item.Id)">Confirm delete</button>
+                                <button type="button" class="btn btn-sm btn-link" @onclick="() => pendingDelete = null">Cancel</button>
+                            }
+                            else
+                            {
+                                <button type="button" class="btn btn-sm btn-outline-danger" @onclick="() => pendingDelete = item.Id">Delete</button>
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+
+@code {
+    [CascadingParameter] private Task<AuthenticationState> AuthState { get; set; } = default!;
+
+    private List<PresentationListItem>? items;
+    private string userId = "";
+    private bool isAdmin;
+    private bool showAll;
+    private string? newTitle;
+    private int? pendingDelete;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var user = (await AuthState).User;
+        userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
+        isAdmin = user.IsInRole(Roles.Admin);
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync() => items = await Presentations.ListAsync(showAll && isAdmin ? null : userId);
+
+    private async Task ToggleAllAsync(ChangeEventArgs e)
+    {
+        showAll = e.Value is true;
+        await LoadAsync();
+    }
+
+    private async Task CreateAsync()
+    {
+        if (string.IsNullOrWhiteSpace(newTitle))
+        {
+            return;
+        }
+
+        var presentation = await Presentations.CreateAsync(userId, newTitle);
+        NavigationManager.NavigateTo($"presentations/{presentation.Id}/edit");
+    }
+
+    private async Task DeleteAsync(int id)
+    {
+        await Presentations.DeleteAsync(id, userId, isAdmin);
+        pendingDelete = null;
+        await LoadAsync();
+    }
+}

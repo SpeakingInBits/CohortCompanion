@@ -1,0 +1,67 @@
+@* Choose, drop, or paste an image. The file input covers the zone, so dropping a file onto it just works. *@
+@using CohortCompanion.Web.Images
+
+@inject ImageService Images
+@inject IJSRuntime JS
+
+<div class="image-drop" @ref="zone" tabindex="0" aria-label="@Label">
+    @if (!string.IsNullOrEmpty(Value))
+    {
+        <img src="@Value" alt="" class="image-drop-preview" />
+    }
+    <span class="image-drop-text">@(busy ? "Uploading…" : "Drop an image here, paste one, or click to choose")</span>
+    <InputFile OnChange="UploadAsync" accept="image/png,image/jpeg,image/gif,image/webp" aria-label="@Label" />
+</div>
+@if (!string.IsNullOrEmpty(Value))
+{
+    <button type="button" class="btn btn-sm btn-link text-danger p-0" @onclick="() => ValueChanged.InvokeAsync(null)">Remove image</button>
+}
+@if (error is not null)
+{
+    <div class="text-danger small" role="alert">@error</div>
+}
+
+@code {
+    [Parameter] public string? Value { get; set; }
+
+    [Parameter] public EventCallback<string?> ValueChanged { get; set; }
+
+    [Parameter] public string Label { get; set; } = "Image";
+
+    private ElementReference zone;
+    private bool busy;
+    private string? error;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await JS.InvokeVoidAsync("cc.enableImagePaste", zone);
+        }
+    }
+
+    private async Task UploadAsync(InputFileChangeEventArgs e)
+    {
+        busy = true;
+        error = null;
+        try
+        {
+            // One byte over the limit, so the service can tell the file was too big and say so.
+            await using var stream = e.File.OpenReadStream(ImageService.MaxBytes + 1);
+            var result = await Images.UploadAsync(stream);
+            error = result.Error;
+            if (result.Url is not null)
+            {
+                await ValueChanged.InvokeAsync(result.Url);
+            }
+        }
+        catch (IOException)
+        {
+            error = "That image is too big. The limit is 5 MB.";
+        }
+        finally
+        {
+            busy = false;
+        }
+    }
+}

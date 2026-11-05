@@ -155,3 +155,89 @@ h1:focus {
 .prompt p:last-child {
     margin-bottom: 0;
 }
+
+/* Slides. Sizes use container units, so a thumbnail is a true miniature of the projected slide. */
+.slide {
+    --slide-bg: #ffffff;
+    --slide-fg: #1f2933;
+    --slide-accent: #1b6ec2;
+    --slide-accent-fg: #ffffff;
+    container-type: inline-size;
+    aspect-ratio: 16 / 9;
+    width: 100%;
+    overflow: hidden;
+    padding: 4cqw 5cqw;
+    background: var(--slide-bg);
+    color: var(--slide-fg);
+    border-radius: 0.25rem;
+    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.12);
+    font-size: 3cqw;
+    display: flex;
+    flex-direction: column;
+    text-align: start;
+}
+
+.slide.theme-midnight { --slide-bg: #10182b; --slide-fg: #eef2fb; --slide-accent: #7aa2f7; --slide-accent-fg: #10182b; }
+.slide.theme-forest { --slide-bg: #f3f7f1; --slide-fg: #1e3325; --slide-accent: #2e6b45; --slide-accent-fg: #ffffff; }
+.slide.theme-sunset { --slide-bg: #fff6ee; --slide-fg: #3b2417; --slide-accent: #c8553d; --slide-accent-fg: #ffffff; }
+.slide.theme-mono { --slide-bg: #ffffff; --slide-fg: #111111; --slide-accent: #111111; --slide-accent-fg: #ffffff; }
+
+.slide.background-accent { background: var(--slide-accent); color: var(--slide-accent-fg); }
+.slide.background-plain { background: #ffffff; color: #1f2933; }
+
+.slide-title { font-size: 2em; font-weight: 700; margin: 0 0 0.5em; color: inherit; }
+.slide-center { margin: auto; text-align: center; }
+.slide.layout-title .slide-title { font-size: 2.8em; }
+.slide-columns { display: grid; grid-template-columns: 1fr 1fr; gap: 4cqw; flex: 1; }
+.slide-image { flex: 1; min-height: 0; max-width: 100%; object-fit: contain; }
+.slide-caption { margin: 0.5em 0 0; text-align: center; }
+
+/* On a phone the slide reflows instead of shrinking to an unreadable 16:9. */
+.slide.reading { aspect-ratio: auto; min-height: 50vh; font-size: 1.1rem; padding: 1.25rem; }
+.slide.reading .slide-columns { grid-template-columns: 1fr; }
+.slide.reading .slide-image { flex: none; }
+
+.slide.editing { aspect-ratio: auto; min-height: 26rem; font-size: 1rem; padding: 1.5rem; }
+.slide-title-input {
+    width: 100%;
+    border: 0;
+    border-bottom: 2px dashed transparent;
+    background: transparent;
+    color: inherit;
+    font-size: 1.8rem;
+    font-weight: 700;
+    margin-bottom: 0.75rem;
+}
+.slide-title-input:hover, .slide-title-input:focus { border-bottom-color: var(--slide-accent); outline: none; }
+
+.editor-grid { display: grid; grid-template-columns: 14rem minmax(0, 1fr) 15rem; gap: 1rem; align-items: start; }
+.slide-strip { max-height: calc(100vh - 11rem); overflow-y: auto; padding: 2px; }
+.slide-thumb { margin-bottom: 0.75rem; padding: 0.25rem; border: 2px solid transparent; border-radius: 0.375rem; cursor: grab; }
+.slide-thumb.selected { border-color: #1b6ec2; }
+.slide-thumb-select { display: block; width: 100%; padding: 0; border: 0; background: none; position: relative; }
+.slide-number { position: absolute; top: 0.15rem; left: 0.3rem; z-index: 1; font-size: 0.7rem; opacity: 0.7; }
+.slide-thumb .slide { pointer-events: none; }
+
+@media (max-width: 991.98px) {
+    .editor-grid { grid-template-columns: 1fr; }
+    .slide-strip { max-height: none; }
+}
+
+.image-drop {
+    position: relative;
+    min-height: 9rem;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    padding: 0.75rem;
+    border: 2px dashed #929292;
+    border-radius: 0.375rem;
+    background: rgba(255, 255, 255, 0.85);
+    color: #1f2933;
+    text-align: center;
+}
+.image-drop:focus-within, .image-drop:hover { border-color: #1b6ec2; }
+.image-drop input[type=file] { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+.image-drop-preview { max-height: 14rem; max-width: 100%; }

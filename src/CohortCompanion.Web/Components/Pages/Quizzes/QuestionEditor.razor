@@ -44,6 +44,13 @@
             }
         </div>
 
+        <details class="mb-3" open="@(!string.IsNullOrEmpty(Question.ImageUrl))">
+            <summary>Image</summary>
+            <div class="mt-2">
+                <ImagePicker Value="@Question.ImageUrl" ValueChanged="SetImage" Label="@($"Image for question {Number}")" />
+            </div>
+        </details>
+
         <details class="mb-3" open="@(!string.IsNullOrEmpty(Question.CodeSnippet))">
             <summary>Code snippet</summary>
             <div class="mt-2">
@@ -165,6 +172,12 @@
     private Task SetPrompt(string value)
     {
         Question.Prompt = value;
+        return Changed();
+    }
+
+    private Task SetImage(string? value)
+    {
+        Question.ImageUrl = value;
         return Changed();
     }
 
