@@ -17,7 +17,8 @@
 {
     <h1>Session ended</h1>
     <p>Per-student data has been deleted. Only the per-question totals were kept.</p>
-    <a class="btn btn-primary" href="sessions">Back to sessions</a>
+    <a class="btn btn-primary" href="sessions/@Id/summary">See the totals</a>
+    <a class="btn btn-outline-secondary" href="sessions">Back to sessions</a>
 }
 else if (notFound)
 {
@@ -159,7 +160,10 @@ else
 
                         @if (view.LiveResults is { } results)
                         {
-                            <h2 class="h6 text-secondary">Only you can see this until you show results</h2>
+                            @if (view.Phase is QuestionPhase.Open or QuestionPhase.Closed)
+                            {
+                                <h2 class="h6 text-secondary">Only you can see this until you show results</h2>
+                            }
                             <ResultsView Results="results" OnHide="HideAsync" OnAccept="AcceptAsync" />
                         }
                     </div>
@@ -272,6 +276,11 @@ else
         if (latest is not null)
         {
             view = latest;
+        }
+        else if (view is not null)
+        {
+            // It ended without this page asking, which means it was swept up as abandoned.
+            ended = true;
         }
     }
 

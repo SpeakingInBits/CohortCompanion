@@ -1,5 +1,7 @@
 using Microsoft.AspNetCore.Components.Authorization;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using Radzen;
 using CohortCompanion.Shared.Live;
@@ -35,7 +37,7 @@ builder.Services.AddAuthentication(options =>
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection") ?? throw new InvalidOperationException("Connection string 'DefaultConnection' not found.");
 // Registers both IDbContextFactory (for interactive components) and a scoped ApplicationDbContext (for Identity).
 builder.Services.AddDbContextFactory<ApplicationDbContext>(options =>
-    options.UseSqlServer(connectionString));
+    options.UseSqlServer(connectionString, sql => sql.EnableRetryOnFailure()));
 builder.Services.AddDatabaseDeveloperPageExceptionFilter();
 
 builder.Services.AddIdentityCore<ApplicationUser>(options =>
@@ -67,12 +69,38 @@ builder.Services.AddSingleton<IImageStore>(string.IsNullOrWhiteSpace(imageOption
     : new BlobImageStore(imageOptions));
 builder.Services.AddSingleton<ImageService>();
 
-builder.Services.AddSignalR(options => options.MaximumReceiveMessageSize = 16 * 1024);
+builder.Services.AddSingleton<LiveRateLimiter>();
+builder.Services.AddSingleton<HubRateLimitFilter>();
+builder.Services.AddSignalR(options =>
+{
+    options.MaximumReceiveMessageSize = 16 * 1024;
+    options.AddFilter<HubRateLimitFilter>();
+});
+builder.Services.AddScoped<SessionHistoryService>();
+builder.Services.AddSingleton<AuditLog>();
+
+// App Service restarts would otherwise invalidate sign-in cookies, so keys live on persistent storage there.
+if (builder.Configuration["DataProtection:KeysPath"] is { Length: > 0 } keysPath)
+{
+    builder.Services.AddDataProtection()
+        .PersistKeysToFileSystem(new DirectoryInfo(keysPath))
+        .SetApplicationName("CohortCompanion");
+}
 builder.Services.AddSingleton<ISessionBroadcaster, HubSessionBroadcaster>();
 builder.Services.AddSingleton<LiveSessionManager>();
 builder.Services.AddHostedService<LiveSessionTicker>();
 
 var app = builder.Build();
+
+app.Use(async (context, next) =>
+{
+    var headers = context.Response.Headers;
+    headers.XContentTypeOptions = "nosniff";
+    headers.XFrameOptions = "DENY";
+    // Join codes appear in URLs, so they aren't passed on to any site a slide links to.
+    headers["Referrer-Policy"] = "no-referrer";
+    await next();
+});
 
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())

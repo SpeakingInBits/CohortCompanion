@@ -56,6 +56,9 @@ public sealed partial class LiveSessionManager(
     /// <summary>Allowance for network latency before a question closes at its deadline.</summary>
     public static readonly TimeSpan DeadlineGrace = TimeSpan.FromMilliseconds(500);
 
+    /// <summary>A session with no activity for this long is ended, so per-student data can't linger.</summary>
+    public static readonly TimeSpan AbandonedAfter = TimeSpan.FromHours(12);
+
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
 
     private readonly ConcurrentDictionary<Guid, LiveRuntime> sessions = new();
@@ -505,13 +508,16 @@ public sealed partial class LiveSessionManager(
     private async Task FinishAsync(LiveRuntime runtime)
     {
         var now = UtcNow;
-        var summaries = BuildSummaries(runtime);
 
-        await using (var db = await dbFactory.CreateDbContextAsync())
+        await using (var strategyContext = await dbFactory.CreateDbContextAsync())
         {
-            await using var transaction = await db.Database.BeginTransactionAsync();
-            db.SessionSummaries.AddRange(summaries);
-            await db.SaveChangesAsync();
+            // All or nothing, and safe to retry after a transient Azure SQL failure: each attempt starts clean.
+            await strategyContext.Database.CreateExecutionStrategy().ExecuteAsync(async () =>
+            {
+                await using var db = await dbFactory.CreateDbContextAsync();
+                await using var transaction = await db.Database.BeginTransactionAsync();
+                db.SessionSummaries.AddRange(BuildSummaries(runtime));
+                await db.SaveChangesAsync();
             // Responses go with their participants through the cascade.
             await db.Participants.Where(p => p.LiveSessionId == runtime.Id).ExecuteDeleteAsync();
             await db.LiveSessions.Where(s => s.Id == runtime.Id).ExecuteUpdateAsync(s => s
@@ -519,7 +525,8 @@ public sealed partial class LiveSessionManager(
                 .SetProperty(x => x.EndedAtUtc, now)
                 .SetProperty(x => x.LastActivityUtc, now)
                 .SetProperty(x => x.PhaseDeadlineUtc, (DateTime?)null));
-            await transaction.CommitAsync();
+                await transaction.CommitAsync();
+            });
         }
 
         runtime.Status = SessionStatus.Ended;
@@ -620,7 +627,7 @@ public sealed partial class LiveSessionManager(
     {
         var question = runtime.CurrentQuestion;
         var mine = question is not null && runtime.Responses.TryGetValue((participant.Id, question.Id), out var response) ? response.Answer : null;
-        return new StudentSessionState(runtime.Kind, runtime.Title, participant.Nickname, BuildPhaseUpdate(runtime), mine, BuildStanding(runtime, participant), BuildPresentationState(runtime));
+        return new StudentSessionState(runtime.Kind, runtime.Title, participant.Nickname, BuildPhaseUpdate(runtime), mine, BuildStanding(runtime, participant, BuildScoreTable(runtime)), BuildPresentationState(runtime));
     }
 
     private ProjectorState BuildProjectorState(LiveRuntime runtime)
@@ -805,6 +812,14 @@ public sealed partial class LiveSessionManager(
                 }
 
                 var now = UtcNow;
+                if (now - runtime.LastActivityUtc >= AbandonedAfter)
+                {
+                    await FinishAsync(runtime);
+                    logger.LogInformation("Ended abandoned session {SessionId}.", runtime.Id);
+                    changed = true;
+                    continue;
+                }
+
                 changed = await AdvanceTimersAsync(runtime, now);
 
                 if (runtime.ViewsAreStale && now - runtime.LastViewPushUtc >= ViewPushInterval)

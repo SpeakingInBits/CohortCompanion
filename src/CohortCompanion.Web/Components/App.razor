@@ -44,5 +44,6 @@
     // Student pages stay light: the instructor-only component library isn't sent to phones.
     private bool IsStudentPage => HttpContext.Request.Path.StartsWithSegments("/j")
         || HttpContext.Request.Path.StartsWithSegments("/join")
-        || HttpContext.Request.Path.StartsWithSegments("/projector");
+        || HttpContext.Request.Path.StartsWithSegments("/projector")
+        || HttpContext.Request.Path.StartsWithSegments("/privacy");
 }

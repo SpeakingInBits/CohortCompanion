@@ -9,6 +9,7 @@
 @inject QuizService Quizzes
 @inject LiveSessionManager Manager
 @inject NavigationManager NavigationManager
+@inject AuditLog Audit
 
 <PageTitle>Quizzes</PageTitle>
 
@@ -151,7 +152,12 @@ else
 
     private async Task DeleteAsync(int id)
     {
-        await Quizzes.DeleteAsync(id, userId, isAdmin);
+        var deleted = await Quizzes.DeleteAsync(id, userId, isAdmin);
+        if (deleted && showAll)
+        {
+            Audit.Record(userId, "DeleteQuiz", $"quiz:{id}");
+        }
+
         pendingDelete = null;
         await LoadAsync();
     }

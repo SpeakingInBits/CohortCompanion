@@ -7,6 +7,7 @@
 @using CohortCompanion.Web.Data
 
 @inject InviteCodeService InviteCodeService
+@inject AuditLog Audit
 @inject NavigationManager NavigationManager
 @inject TimeProvider TimeProvider
 @inject IJSRuntime JS
@@ -136,6 +137,7 @@ else
         var user = (await AuthenticationState).User;
         var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
         created = await InviteCodeService.CreateAsync(userId, form.Note, form.LockedToEmail, form.MaxUses, form.ExpiresInDays);
+        Audit.Record(userId, "CreateInviteCode", $"invite:{created.Id}");
         form = new();
         await LoadAsync();
     }
@@ -143,6 +145,7 @@ else
     private async Task RevokeAsync(int id)
     {
         await InviteCodeService.RevokeAsync(id);
+        Audit.Record((await AuthenticationState).User.FindFirstValue(ClaimTypes.NameIdentifier)!, "RevokeInviteCode", $"invite:{id}");
         if (created?.Id == id)
         {
             created = null;

@@ -10,6 +10,7 @@
 @using CohortCompanion.Web.Data
 
 @inject IDbContextFactory<ApplicationDbContext> DbFactory
+@inject AuditLog Audit
 @inject IServiceScopeFactory ScopeFactory
 @inject NavigationManager NavigationManager
 @inject IJSRuntime JS
@@ -147,6 +148,7 @@ else
         }
 
         var token = await userManager.GeneratePasswordResetTokenAsync(tracked);
+        Audit.Record(currentUserId!, "CreatePasswordResetLink", $"user:{user.Id}");
         var code = WebEncoders.Base64UrlEncode(Encoding.UTF8.GetBytes(token));
         var url = NavigationManager.GetUriWithQueryParameters(
             NavigationManager.ToAbsoluteUri("Account/ResetPassword").AbsoluteUri,
@@ -172,6 +174,8 @@ else
         {
             await userManager.RemoveFromRoleAsync(tracked, Roles.Instructor);
         }
+
+        Audit.Record(currentUserId!, isInstructor ? "RestoreInstructor" : "RemoveInstructor", $"user:{user.Id}");
 
         // Signs the user out of existing sessions at the next revalidation, so the role change takes effect.
         await userManager.UpdateSecurityStampAsync(tracked);

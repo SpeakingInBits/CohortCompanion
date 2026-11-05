@@ -754,7 +754,7 @@ namespace CohortCompanion.Web.Data.Migrations
                     b.HasOne("CohortCompanion.Web.Data.ApplicationUser", "Host")
                         .WithMany()
                         .HasForeignKey("HostId")
-                        .OnDelete(DeleteBehavior.Restrict)
+                        .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
                     b.Navigation("Host");
@@ -774,7 +774,7 @@ namespace CohortCompanion.Web.Data.Migrations
                     b.HasOne("CohortCompanion.Web.Data.ApplicationUser", "Owner")
                         .WithMany()
                         .HasForeignKey("OwnerId")
-                        .OnDelete(DeleteBehavior.Restrict)
+                        .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
                     b.Navigation("Owner");
@@ -794,7 +794,7 @@ namespace CohortCompanion.Web.Data.Migrations
                     b.HasOne("CohortCompanion.Web.Data.ApplicationUser", "Owner")
                         .WithMany()
                         .HasForeignKey("OwnerId")
-                        .OnDelete(DeleteBehavior.Restrict)
+                        .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
                     b.Navigation("Owner");
