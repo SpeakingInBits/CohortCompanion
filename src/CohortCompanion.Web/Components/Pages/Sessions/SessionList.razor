@@ -1,0 +1,53 @@
+@page "/sessions"
+@attribute [Authorize(Roles = Roles.Instructor)]
+@rendermode InteractiveServer
+
+@using System.Security.Claims
+@using CohortCompanion.Shared.Live
+@using CohortCompanion.Web.Live
+
+@inject LiveSessionManager Manager
+
+<PageTitle>Sessions</PageTitle>
+
+<h1>Sessions</h1>
+
+<h2 class="h4 mt-4">Live now</h2>
+@if (live.Count == 0)
+{
+    <p>Nothing is running. Start a session from <a href="quizzes">your quizzes</a>.</p>
+}
+else
+{
+    <div class="table-responsive">
+        <table class="table align-middle">
+            <thead>
+                <tr><th>Title</th><th>Join code</th><th>Status</th><th>Participants</th><th></th></tr>
+            </thead>
+            <tbody>
+                @foreach (var session in live)
+                {
+                    <tr>
+                        <td>@session.Title</td>
+                        <td class="font-monospace">@session.JoinCode</td>
+                        <td>@(session.Status == SessionStatus.Lobby ? "In the lobby" : "Running")</td>
+                        <td>@session.ParticipantCount</td>
+                        <td class="text-end"><a class="btn btn-sm btn-primary" href="sessions/@session.Id/host">Open</a></td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+
+@code {
+    [CascadingParameter] private Task<AuthenticationState> AuthState { get; set; } = default!;
+
+    private IReadOnlyList<SessionListItem> live = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        var hostId = (await AuthState).User.FindFirstValue(ClaimTypes.NameIdentifier)!;
+        live = Manager.ListLive(hostId);
+    }
+}

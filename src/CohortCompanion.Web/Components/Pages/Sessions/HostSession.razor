@@ -1,0 +1,252 @@
+@page "/sessions/{Id:guid}/host"
+@attribute [Authorize(Roles = Roles.Instructor)]
+@rendermode InteractiveServer
+
+@using System.Security.Claims
+@using CohortCompanion.Shared
+@using CohortCompanion.Shared.Live
+@using CohortCompanion.Web.Live
+
+@inject LiveSessionManager Manager
+@inject NavigationManager NavigationManager
+@implements IDisposable
+
+<PageTitle>@(view?.Title ?? "Live session")</PageTitle>
+
+@if (ended)
+{
+    <h1>Session ended</h1>
+    <p>Per-student data has been deleted. Only the per-question totals were kept.</p>
+    <a class="btn btn-primary" href="sessions">Back to sessions</a>
+}
+else if (notFound)
+{
+    <h1>Session not found</h1>
+    <p>It may have ended already. <a href="sessions">Back to sessions</a></p>
+}
+else if (view is null)
+{
+    <p><em>Loading…</em></p>
+}
+else
+{
+    <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
+        <h1 class="me-auto mb-0">@view.Title</h1>
+        <span class="fs-5">Join code <strong class="font-monospace">@view.JoinCode</strong></span>
+        <a class="btn btn-outline-secondary" href="projector/@view.Id" target="_blank">Open projector view</a>
+        @if (confirmEnd)
+        {
+            <button type="button" class="btn btn-danger" @onclick="EndAsync">Confirm end</button>
+            <button type="button" class="btn btn-link" @onclick="() => confirmEnd = false">Cancel</button>
+        }
+        else
+        {
+            <button type="button" class="btn btn-outline-danger" @onclick="() => confirmEnd = true">End session</button>
+        }
+    </div>
+
+    <div class="row g-4">
+        <div class="col-lg-8">
+            @if (view.Status == SessionStatus.Lobby)
+            {
+                <div class="card">
+                    <div class="card-body text-center">
+                        <p class="mb-1">Students go to <strong>@NavigationManager.ToAbsoluteUri("join")</strong> or scan:</p>
+                        <img class="qr-code d-block mx-auto my-3" src="qr/@(view.JoinCode).svg" alt="QR code to join" />
+                        <button type="button" class="btn btn-primary btn-lg" @onclick="() => RunAsync(Manager.StartAsync)">Start</button>
+                    </div>
+                </div>
+            }
+            else if (view.Phase == QuestionPhase.Finished)
+            {
+                <div class="card">
+                    <div class="card-body">
+                        <h2 class="h4">That's the last question</h2>
+                        <p>Ending the session deletes every nickname and answer, and keeps only the per-question totals.</p>
+                    </div>
+                </div>
+            }
+            else if (view.Question is { } question)
+            {
+                <div class="card">
+                    <div class="card-body">
+                        <div class="d-flex flex-wrap justify-content-between gap-2 mb-2">
+                            <span class="text-secondary">Question @(view.QuestionIndex + 1) of @view.QuestionCount · @PhaseName</span>
+                            <span>
+                                @view.ResponseCount of @view.Participants.Count answered
+                                @if (view.RemainingMs is { } remaining && view.Phase == QuestionPhase.Open)
+                                {
+                                    <span class="live-timer ms-2" role="timer">@(remaining / 1000)s</span>
+                                }
+                            </span>
+                        </div>
+
+                        <div class="prompt mb-3">@((MarkupString)BlankTokens.ToDisplay(question.Prompt))</div>
+                        @if (!string.IsNullOrEmpty(question.CodeSnippet))
+                        {
+                            <div class="mb-3"><CodeBlock Code="@question.CodeSnippet" Language="@question.CodeLanguage" /></div>
+                        }
+
+                        <div class="d-flex flex-wrap gap-2 mb-3">
+                            @switch (view.Phase)
+                            {
+                                case QuestionPhase.Waiting:
+                                    <button type="button" class="btn btn-primary" @onclick="() => RunAsync(Manager.OpenQuestionAsync)">Open question</button>
+                                    break;
+                                case QuestionPhase.Open:
+                                    <button type="button" class="btn btn-primary" @onclick="() => RunAsync(Manager.CloseQuestionAsync)">Close question</button>
+                                    break;
+                                case QuestionPhase.Closed:
+                                    <button type="button" class="btn btn-primary" @onclick="() => RunAsync(Manager.ShowResultsAsync)">Show results</button>
+                                    break;
+                                case QuestionPhase.ShowingResults:
+                                    @if (question.Type != QuestionType.WordCloud)
+                                    {
+                                        <button type="button" class="btn btn-primary" @onclick="() => RunAsync(Manager.RevealAnswerAsync)">Reveal answer</button>
+                                    }
+                                    <button type="button" class="btn btn-outline-primary" @onclick="() => RunAsync(Manager.NextAsync)">@NextLabel</button>
+                                    break;
+                                case QuestionPhase.AnswerRevealed:
+                                    <button type="button" class="btn btn-primary" @onclick="() => RunAsync(Manager.NextAsync)">@NextLabel</button>
+                                    break;
+                            }
+                        </div>
+
+                        @if (view.LiveResults is { } results)
+                        {
+                            <h2 class="h6 text-secondary">Only you can see this until you show results</h2>
+                            <ResultsView Results="results" OnHide="HideAsync" />
+                        }
+                    </div>
+                </div>
+            }
+        </div>
+
+        <div class="col-lg-4">
+            <h2 class="h5">Participants (@view.Participants.Count)</h2>
+            @if (view.Participants.Count == 0)
+            {
+                <p class="text-secondary">Nobody has joined yet.</p>
+            }
+            <ul class="list-unstyled">
+                @foreach (var participant in view.Participants)
+                {
+                    <li class="d-flex align-items-center gap-2 mb-1" @key="participant.Id">
+                        @if (renaming == participant.Id)
+                        {
+                            <input class="form-control form-control-sm" maxlength="@AnswerLimits.MaxNickname" aria-label="New nickname" @bind="newName" />
+                            <button type="button" class="btn btn-sm btn-primary" @onclick="() => RenameAsync(participant.Id)">Save</button>
+                        }
+                        else
+                        {
+                            <span class="me-auto text-truncate">@participant.Nickname</span>
+                            <button type="button" class="btn btn-sm btn-link p-0" @onclick="() => BeginRename(participant)">Rename</button>
+                            <button type="button" class="btn btn-sm btn-link text-danger p-0" @onclick="() => Manager.RemoveParticipantAsync(Id, hostId, participant.Id)">Remove</button>
+                        }
+                    </li>
+                }
+            </ul>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public Guid Id { get; set; }
+
+    [CascadingParameter] private Task<AuthenticationState> AuthState { get; set; } = default!;
+
+    private HostView? view;
+    private string hostId = "";
+    private bool notFound;
+    private bool ended;
+    private bool confirmEnd;
+    private Guid? renaming;
+    private string? newName;
+    private Timer? clock;
+
+    private string PhaseName => view?.Phase switch
+    {
+        QuestionPhase.Waiting => "Not open yet",
+        QuestionPhase.Open => "Open",
+        QuestionPhase.Closed => "Closed",
+        QuestionPhase.ShowingResults => "Showing results",
+        QuestionPhase.AnswerRevealed => "Answer revealed",
+        _ => "",
+    };
+
+    private string NextLabel => view is not null && view.QuestionIndex + 1 >= view.QuestionCount ? "Finish quiz" : "Next question";
+
+    protected override async Task OnInitializedAsync()
+    {
+        hostId = (await AuthState).User.FindFirstValue(ClaimTypes.NameIdentifier)!;
+        await RefreshAsync();
+        notFound = view is null;
+        if (view is not null)
+        {
+            Manager.HostViewChanged += OnHostViewChanged;
+            clock = new Timer(_ => InvokeAsync(TickClockAsync), null, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(1));
+        }
+    }
+
+    private void OnHostViewChanged(Guid sessionId)
+    {
+        if (sessionId == Id)
+        {
+            _ = InvokeAsync(async () =>
+            {
+                await RefreshAsync();
+                StateHasChanged();
+            });
+        }
+    }
+
+    private async Task TickClockAsync()
+    {
+        if (view?.RemainingMs is not null)
+        {
+            await RefreshAsync();
+            StateHasChanged();
+        }
+    }
+
+    private async Task RefreshAsync()
+    {
+        var latest = await Manager.GetHostViewAsync(Id, hostId);
+        if (latest is not null)
+        {
+            view = latest;
+        }
+    }
+
+    private async Task RunAsync(Func<Guid, string, Task<bool>> command)
+    {
+        await command(Id, hostId);
+        await RefreshAsync();
+    }
+
+    private Task HideAsync(string word) => Manager.HideWordAsync(Id, hostId, word);
+
+    private void BeginRename(ParticipantView participant)
+    {
+        renaming = participant.Id;
+        newName = participant.Nickname;
+    }
+
+    private async Task RenameAsync(Guid participantId)
+    {
+        await Manager.RenameParticipantAsync(Id, hostId, participantId, newName ?? "");
+        renaming = null;
+    }
+
+    private async Task EndAsync()
+    {
+        ended = await Manager.EndAsync(Id, hostId);
+        confirmEnd = false;
+    }
+
+    public void Dispose()
+    {
+        clock?.Dispose();
+        Manager.HostViewChanged -= OnHostViewChanged;
+    }
+}

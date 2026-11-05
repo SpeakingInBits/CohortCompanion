@@ -6,6 +6,8 @@
 
 <p class="lead">Live presentations and quizzes for your classroom.</p>
 
+<p><a class="btn btn-primary" href="join">Join a session</a></p>
+
 <AuthorizeView Roles="@Roles.Instructor">
     <Authorized>
         <p>Welcome back, @context.User.Identity?.Name. <a href="quizzes">Go to your quizzes</a>.</p>

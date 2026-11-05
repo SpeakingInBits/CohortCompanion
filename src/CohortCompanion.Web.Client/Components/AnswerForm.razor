@@ -1,0 +1,99 @@
+@* The student's input for one question. It only collects the answer; the server decides if it counts. *@
+
+@switch (Question.Type)
+{
+    case QuestionType.MultipleChoice:
+        @foreach (var option in Question.Options)
+        {
+            <button type="button" class="btn option-choice @(selected.Contains(option.Index) ? "btn-primary" : "btn-outline-primary")"
+                    aria-pressed="@(selected.Contains(option.Index) ? "true" : "false")"
+                    @onclick="() => Toggle(option.Index)">
+                @option.Text
+                @if (!string.IsNullOrEmpty(option.CodeSnippet))
+                {
+                    <code class="d-block">@option.CodeSnippet</code>
+                }
+            </button>
+        }
+        @if (Question.AllowMultipleSelect)
+        {
+            <p class="form-text">Select all that apply.</p>
+        }
+        break;
+
+    case QuestionType.WordCloud:
+        @for (var i = 0; i < entries.Length; i++)
+        {
+            var index = i;
+            <input class="form-control mb-2" maxlength="@AnswerLimits.MaxEntryLength" aria-label="Word @(index + 1)" placeholder="Your word"
+                   value="@entries[index]" @oninput="e => entries[index] = e.Value?.ToString() ?? string.Empty" />
+        }
+        break;
+
+    case QuestionType.FillInBlank:
+        @for (var i = 0; i < blanks.Length; i++)
+        {
+            var index = i;
+            <label class="form-label" for="blank-@index">Blank @(index + 1)</label>
+            <input id="blank-@index" class="form-control mb-2" maxlength="@AnswerLimits.MaxBlankLength" autocomplete="off" autocapitalize="off"
+                   value="@blanks[index]" @oninput="e => blanks[index] = e.Value?.ToString() ?? string.Empty" />
+        }
+        break;
+}
+
+<button type="button" class="btn btn-success btn-lg w-100 mt-2" disabled="@(Busy || !HasAnswer)" @onclick="SubmitAsync">Submit</button>
+
+@code {
+    [Parameter, EditorRequired] public StudentQuestion Question { get; set; } = default!;
+
+    [Parameter] public EventCallback<AnswerPayload> OnSubmit { get; set; }
+
+    [Parameter] public bool Busy { get; set; }
+
+    private readonly HashSet<int> selected = [];
+    private string[] entries = [];
+    private string[] blanks = [];
+    private int questionId;
+
+    protected override void OnParametersSet()
+    {
+        if (questionId == Question.Id)
+        {
+            return;
+        }
+
+        questionId = Question.Id;
+        selected.Clear();
+        entries = new string[Math.Max(1, Question.MaxEntries)];
+        blanks = new string[Question.BlankCount];
+        Array.Fill(entries, "");
+        Array.Fill(blanks, "");
+    }
+
+    private bool HasAnswer => Question.Type switch
+    {
+        QuestionType.MultipleChoice => selected.Count > 0,
+        // Typing updates these without re-rendering, so text inputs always leave the button enabled.
+        _ => true,
+    };
+
+    private void Toggle(int index)
+    {
+        if (!Question.AllowMultipleSelect)
+        {
+            selected.Clear();
+            selected.Add(index);
+        }
+        else if (!selected.Remove(index))
+        {
+            selected.Add(index);
+        }
+    }
+
+    private Task SubmitAsync() => OnSubmit.InvokeAsync(Question.Type switch
+    {
+        QuestionType.MultipleChoice => new AnswerPayload(Options: selected.ToArray()),
+        QuestionType.WordCloud => new AnswerPayload(Entries: entries.Where(e => !string.IsNullOrWhiteSpace(e)).ToArray()),
+        _ => new AnswerPayload(Blanks: blanks),
+    });
+}

@@ -3,9 +3,11 @@
 @rendermode InteractiveServer
 
 @using System.Security.Claims
+@using CohortCompanion.Web.Live
 @using CohortCompanion.Web.Quizzes
 
 @inject QuizService Quizzes
+@inject LiveSessionManager Manager
 @inject NavigationManager NavigationManager
 
 <PageTitle>Quizzes</PageTitle>
@@ -28,6 +30,11 @@
         <input id="show-all" class="form-check-input" type="checkbox" checked="@showAll" @onchange="ToggleAllAsync" />
         <label class="form-check-label" for="show-all">Show every instructor's quizzes</label>
     </div>
+}
+
+@if (runError is not null)
+{
+    <div class="alert alert-warning" role="alert">@runError</div>
 }
 
 @if (quizzes is null)
@@ -70,6 +77,7 @@ else
                         <td class="text-end text-nowrap">
                             @if (!showAll)
                             {
+                                <button type="button" class="btn btn-sm btn-primary" disabled="@(quiz.QuestionCount == 0)" @onclick="() => RunAsync(quiz.Id)">Run live</button>
                                 <a class="btn btn-sm btn-outline-primary" href="quizzes/@quiz.Id/edit">Edit</a>
                             }
                             @if (pendingDelete == quiz.Id)
@@ -98,6 +106,7 @@ else
     private bool showAll;
     private string? newTitle;
     private int? pendingDelete;
+    private string? runError;
 
     protected override async Task OnInitializedAsync()
     {
@@ -124,6 +133,20 @@ else
 
         var quiz = await Quizzes.CreateAsync(userId, newTitle);
         NavigationManager.NavigateTo($"quizzes/{quiz.Id}/edit");
+    }
+
+    private async Task RunAsync(int id)
+    {
+        runError = null;
+        var quiz = await Quizzes.GetAsync(id, userId);
+        var sessionId = quiz is null ? null : await Manager.CreateQuizSessionAsync(quiz, userId);
+        if (sessionId is null)
+        {
+            runError = "This quiz isn't ready to run yet. Open it to see what needs fixing.";
+            return;
+        }
+
+        NavigationManager.NavigateTo($"sessions/{sessionId}/host");
     }
 
     private async Task DeleteAsync(int id)

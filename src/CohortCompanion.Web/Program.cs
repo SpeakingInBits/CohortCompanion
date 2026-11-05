@@ -2,11 +2,13 @@ using Microsoft.AspNetCore.Components.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Radzen;
+using CohortCompanion.Shared.Live;
 using CohortCompanion.Web.Auth;
 using CohortCompanion.Web.Components;
 using CohortCompanion.Web.Components.Account;
 using CohortCompanion.Web.Content;
 using CohortCompanion.Web.Data;
+using CohortCompanion.Web.Live;
 using CohortCompanion.Web.Quizzes;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -56,6 +58,11 @@ builder.Services.AddRadzenComponents();
 builder.Services.AddSingleton<ContentSanitizer>();
 builder.Services.AddScoped<QuizService>();
 
+builder.Services.AddSignalR(options => options.MaximumReceiveMessageSize = 16 * 1024);
+builder.Services.AddSingleton<ISessionBroadcaster, HubSessionBroadcaster>();
+builder.Services.AddSingleton<LiveSessionManager>();
+builder.Services.AddHostedService<LiveSessionTicker>();
+
 var app = builder.Build();
 
 // Configure the HTTP request pipeline.
@@ -83,6 +90,9 @@ app.MapRazorComponents<App>()
 
 // Add additional endpoints required by the Identity /Account Razor components.
 app.MapAdditionalIdentityEndpoints();
+
+app.MapHub<SessionHub>(HubEvents.HubPath);
+app.MapJoinQrCode();
 
 await app.InitializeDatabaseAsync();
 
