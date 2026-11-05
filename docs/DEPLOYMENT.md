@@ -46,6 +46,24 @@ CREATE USER [<webAppName>] FROM EXTERNAL PROVIDER;
 ALTER ROLE db_owner ADD MEMBER [<webAppName>];
 ```
 
+If your network blocks port 1433, as a campus firewall may, use Azure Cloud Shell. It runs inside Azure, so the server
+already allows it and you don't need a firewall rule. Cloud Shell may not have `sqlcmd`, but its PowerShell can do this
+with nothing installed. Run `pwsh`, then paste this, filling in `<sqlServerName>` and `<webAppName>`. It prints `-1` when
+it works.
+
+```powershell
+$token = az account get-access-token --resource https://database.windows.net/ --query accessToken -o tsv
+$conn = [System.Data.SqlClient.SqlConnection]::new("Server=tcp:<sqlServerName>.database.windows.net,1433;Database=CohortCompanion;Encrypt=True;")
+$conn.AccessToken = $token
+$conn.Open()
+$cmd = $conn.CreateCommand()
+$cmd.CommandText = "CREATE USER [<webAppName>] FROM EXTERNAL PROVIDER; ALTER ROLE db_owner ADD MEMBER [<webAppName>];"
+$cmd.ExecuteNonQuery()
+$conn.Close()
+```
+
+The app can't start until this is done, so if it was already deployed, restart it afterward.
+
 `db_owner` is needed because the app applies migrations at startup (`Database:MigrateOnStartup`). For the school's
 production setup, consider running migrations from the deployment pipeline instead and granting the app only
 `db_datareader` and `db_datawriter`.
