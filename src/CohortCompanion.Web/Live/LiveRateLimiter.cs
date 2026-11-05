@@ -13,6 +13,11 @@ public sealed class LiveRateLimiter : IDisposable
 {
     public const int JoinsPerConnection = 10;
     public const int JoinsPerAddress = 1000;
+
+    // Rejoining has its own, larger allowance: when Wi-Fi drops, a whole lecture comes back in the same few
+    // seconds, often just after joining. It also needs a valid token, so there's little for a limit to protect.
+    public const int RejoinsPerConnection = 10;
+    public const int RejoinsPerAddress = 10_000;
     public const int AnswersPerConnection = 30;
     public const int AnswersPerAddress = 5000;
 
@@ -30,11 +35,15 @@ public sealed class LiveRateLimiter : IDisposable
     {
         "jc" => JoinsPerConnection,
         "ja" => JoinsPerAddress,
+        "rc" => RejoinsPerConnection,
+        "ra" => RejoinsPerAddress,
         "ac" => AnswersPerConnection,
         _ => AnswersPerAddress,
     };
 
     public bool TryJoin(string connectionId, string? address) => TryAcquire("jc", "ja", connectionId, address);
+
+    public bool TryRejoin(string connectionId, string? address) => TryAcquire("rc", "ra", connectionId, address);
 
     public bool TryAnswer(string connectionId, string? address) => TryAcquire("ac", "aa", connectionId, address);
 
@@ -65,7 +74,8 @@ public sealed class HubRateLimitFilter(LiveRateLimiter limiter) : IHubFilter
 
         var allowed = invocationContext.HubMethodName switch
         {
-            nameof(SessionHub.Join) or nameof(SessionHub.Rejoin) => limiter.TryJoin(connectionId, address),
+            nameof(SessionHub.Join) => limiter.TryJoin(connectionId, address),
+            nameof(SessionHub.Rejoin) => limiter.TryRejoin(connectionId, address),
             nameof(SessionHub.SubmitAnswer) => limiter.TryAnswer(connectionId, address),
             _ => true,
         };

@@ -163,6 +163,35 @@ public sealed class LiveRateLimiterTests
     }
 
     [Fact]
+    public void AWholeLectureReconnecting_JustAfterJoining_IsNotLimited()
+    {
+        using var limiter = new LiveRateLimiter();
+
+        for (var student = 0; student < LiveRateLimiter.JoinsPerAddress; student++)
+        {
+            Assert.True(limiter.TryJoin($"c{student}", "10.0.0.1"));
+        }
+
+        for (var student = 0; student < LiveRateLimiter.JoinsPerAddress; student++)
+        {
+            Assert.True(limiter.TryRejoin($"new{student}", "10.0.0.1"));
+        }
+    }
+
+    [Fact]
+    public void OneConnection_CannotRejoinEndlessly()
+    {
+        using var limiter = new LiveRateLimiter();
+
+        for (var i = 0; i < LiveRateLimiter.RejoinsPerConnection; i++)
+        {
+            Assert.True(limiter.TryRejoin("c1", "10.0.0.1"));
+        }
+
+        Assert.False(limiter.TryRejoin("c1", "10.0.0.1"));
+    }
+
+    [Fact]
     public void JoinsAndAnswers_HaveSeparateAllowances()
     {
         using var limiter = new LiveRateLimiter();
