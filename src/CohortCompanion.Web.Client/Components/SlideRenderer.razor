@@ -1,0 +1,70 @@
+@* Draws a slide. The same component is used for thumbnails, the projector, and student devices, so what
+   instructors see while editing matches what the class sees. *@
+
+<div class="slide theme-@ThemeId background-@Content.Background layout-@Layout.ToString().ToLowerInvariant() @(Reading ? "reading" : "")">
+    @switch (Layout)
+    {
+        case SlideLayout.Title:
+        case SlideLayout.SectionHeader:
+            <div class="slide-center">
+                <h1 class="slide-title">@Content.Title</h1>
+                @if (!string.IsNullOrWhiteSpace(Content.Body))
+                {
+                    <div class="slide-body">@((MarkupString)Content.Body)</div>
+                }
+            </div>
+            break;
+
+        case SlideLayout.TwoColumns:
+            <h2 class="slide-title">@Content.Title</h2>
+            <div class="slide-columns">
+                <div class="slide-body">@((MarkupString)Content.Body)</div>
+                <div class="slide-body">@((MarkupString)Content.Body2)</div>
+            </div>
+            break;
+
+        case SlideLayout.Image:
+        case SlideLayout.ImageCaption:
+            @if (!string.IsNullOrWhiteSpace(Content.Title))
+            {
+                <h2 class="slide-title">@Content.Title</h2>
+            }
+            @if (!string.IsNullOrEmpty(Content.ImageUrl))
+            {
+                <img class="slide-image" src="@Content.ImageUrl" alt="@Content.ImageAlt" />
+            }
+            @if (Layout == SlideLayout.ImageCaption)
+            {
+                <p class="slide-caption">@Content.Caption</p>
+            }
+            break;
+
+        case SlideLayout.Code:
+            <h2 class="slide-title">@Content.Title</h2>
+            @if (!string.IsNullOrEmpty(Content.Code))
+            {
+                <CodeBlock Code="@Content.Code" Language="@Content.CodeLanguage" />
+            }
+            break;
+
+        case SlideLayout.Blank:
+            <div class="slide-body">@((MarkupString)Content.Body)</div>
+            break;
+
+        default:
+            <h2 class="slide-title">@Content.Title</h2>
+            <div class="slide-body">@((MarkupString)Content.Body)</div>
+            break;
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public SlideLayout Layout { get; set; }
+
+    [Parameter, EditorRequired] public SlideContent Content { get; set; } = default!;
+
+    [Parameter] public string ThemeId { get; set; } = SlideThemes.DefaultTheme;
+
+    /// <summary>Reflows the slide for a phone instead of keeping the 16:9 shape.</summary>
+    [Parameter] public bool Reading { get; set; }
+}

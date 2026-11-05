@@ -1,0 +1,258 @@
+@page "/presentations/{Id:int}/edit"
+@attribute [Authorize(Roles = Roles.Instructor)]
+@rendermode InteractiveServer
+
+@using System.Security.Claims
+@using System.Text.Json
+@using CohortCompanion.Shared
+@using CohortCompanion.Web.Components.Shared
+@using CohortCompanion.Web.Presentations
+
+@inject PresentationService Presentations
+@inject NavigationManager NavigationManager
+@implements IAsyncDisposable
+
+<PageTitle>Edit presentation</PageTitle>
+
+@if (notFound)
+{
+    <h1>Presentation not found</h1>
+    <p><a href="presentations">Back to your presentations</a></p>
+}
+else if (document is null)
+{
+    <p><em>Loading…</em></p>
+}
+else
+{
+    <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
+        <label for="deck-title" class="visually-hidden">Presentation title</label>
+        <input id="deck-title" class="form-control form-control-lg me-auto" style="max-width: 28rem" maxlength="200"
+               @bind="document.Title" @bind:after="Changed" />
+        <span class="text-secondary" role="status">@status</span>
+        <button type="button" class="btn btn-outline-secondary" disabled="@(!CanUndo)" @onclick="UndoAsync">Undo</button>
+        <button type="button" class="btn btn-outline-secondary" disabled="@(!CanRedo)" @onclick="RedoAsync">Redo</button>
+        <a class="btn btn-outline-secondary" href="presentations">Back</a>
+    </div>
+
+    <div class="editor-grid">
+        <aside class="slide-strip" aria-label="Slides">
+            @for (var i = 0; i < document.Slides.Count; i++)
+            {
+                var index = i;
+                var slide = document.Slides[index];
+                <div class="slide-thumb @(index == current ? "selected" : "")" draggable="true" @key="slide"
+                     @ondragstart="() => dragging = index"
+                     @ondragover:preventDefault="true"
+                     @ondragover="() => { }"
+                     @ondrop="() => DropSlide(index)">
+                    <button type="button" class="slide-thumb-select" aria-label="Go to slide @(index + 1)" aria-current="@(index == current ? "true" : null)" @onclick="() => current = index">
+                        <span class="slide-number">@(index + 1)</span>
+                        <SlideRenderer Layout="slide.Layout" Content="slide.Content" ThemeId="@document.ThemeId" />
+                    </button>
+                    <div class="d-flex justify-content-end gap-2">
+                        <button type="button" class="btn btn-sm btn-link p-0" disabled="@(index == 0)" aria-label="Move slide @(index + 1) up" @onclick="() => MoveSlide(index, index - 1)">↑</button>
+                        <button type="button" class="btn btn-sm btn-link p-0" disabled="@(index == document.Slides.Count - 1)" aria-label="Move slide @(index + 1) down" @onclick="() => MoveSlide(index, index + 1)">↓</button>
+                        <button type="button" class="btn btn-sm btn-link p-0" @onclick="() => DuplicateSlide(index)">Duplicate</button>
+                        <button type="button" class="btn btn-sm btn-link text-danger p-0" disabled="@(document.Slides.Count == 1)" @onclick="() => DeleteSlide(index)">Delete</button>
+                    </div>
+                </div>
+            }
+            <button type="button" class="btn btn-outline-primary w-100" disabled="@(document.Slides.Count >= PresentationService.MaxSlides)" @onclick="AddSlide">Add slide</button>
+        </aside>
+
+        <section aria-label="Slide canvas">
+            <SlideCanvas @key="(Selected, revision)" Slide="Selected" ThemeId="@document.ThemeId" OnChanged="Changed" />
+        </section>
+
+        <aside aria-label="Slide properties">
+            <div class="mb-3">
+                <label for="layout" class="form-label">Layout</label>
+                <select id="layout" class="form-select" @bind="Selected.Layout" @bind:after="Changed">
+                    @foreach (var slideLayout in Enum.GetValues<SlideLayout>())
+                    {
+                        <option value="@slideLayout">@SlideThemes.LayoutName(slideLayout)</option>
+                    }
+                </select>
+            </div>
+            <div class="mb-3">
+                <label for="background" class="form-label">Background</label>
+                <select id="background" class="form-select" @bind="Selected.Content.Background" @bind:after="Changed">
+                    @foreach (var background in SlideThemes.Backgrounds)
+                    {
+                        <option value="@background.Id">@background.Name</option>
+                    }
+                </select>
+            </div>
+            <div class="mb-3">
+                <label for="theme" class="form-label">Theme for the whole deck</label>
+                <select id="theme" class="form-select" @bind="document.ThemeId" @bind:after="Changed">
+                    @foreach (var theme in SlideThemes.All)
+                    {
+                        <option value="@theme.Id">@theme.Name</option>
+                    }
+                </select>
+            </div>
+            <div class="mb-3">
+                <label for="notes" class="form-label">Speaker notes</label>
+                <textarea id="notes" class="form-control" rows="7" maxlength="10000" @bind="Selected.SpeakerNotes" @bind:event="oninput" @bind:after="Changed"></textarea>
+                <div class="form-text">Only you see these while presenting.</div>
+            </div>
+        </aside>
+    </div>
+}
+
+@code {
+    private const int MaxHistory = 50;
+    private static readonly TimeSpan AutosaveDelay = TimeSpan.FromSeconds(1.2);
+    private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
+
+    [Parameter] public int Id { get; set; }
+
+    [CascadingParameter] private Task<AuthenticationState> AuthState { get; set; } = default!;
+
+    private PresentationDocument? document;
+    private string ownerId = "";
+    private bool notFound;
+    private string status = "All changes saved";
+    private int current;
+    private int? dragging;
+    private int revision;
+    private bool dirty;
+    private Timer? autosave;
+    private IDisposable? navigationGuard;
+
+    // Undo history: whole-deck snapshots, taken each time an autosave fires.
+    private readonly List<string> history = [];
+    private int historyPosition;
+
+    private EditableSlide Selected => document!.Slides[Math.Clamp(current, 0, document.Slides.Count - 1)];
+
+    private bool CanUndo => historyPosition > 0 || dirty;
+
+    private bool CanRedo => historyPosition < history.Count - 1 && !dirty;
+
+    protected override async Task OnInitializedAsync()
+    {
+        ownerId = (await AuthState).User.FindFirstValue(ClaimTypes.NameIdentifier)!;
+        document = await Presentations.GetAsync(Id, ownerId);
+        notFound = document is null;
+        if (document is not null)
+        {
+            history.Add(Serialize());
+        }
+    }
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (firstRender)
+        {
+            autosave = new Timer(_ => InvokeAsync(SaveNowAsync));
+            navigationGuard = NavigationManager.RegisterLocationChangingHandler(async _ => await SaveNowAsync());
+        }
+    }
+
+    private string Serialize() => JsonSerializer.Serialize(document, Json);
+
+    private void Changed()
+    {
+        dirty = true;
+        status = "Saving…";
+        autosave?.Change(AutosaveDelay, Timeout.InfiniteTimeSpan);
+    }
+
+    private async Task SaveNowAsync()
+    {
+        if (!dirty || document is null)
+        {
+            return;
+        }
+
+        dirty = false;
+        history.RemoveRange(historyPosition + 1, history.Count - historyPosition - 1);
+        history.Add(Serialize());
+        if (history.Count > MaxHistory)
+        {
+            history.RemoveAt(0);
+        }
+
+        historyPosition = history.Count - 1;
+        await PersistAsync();
+    }
+
+    private async Task PersistAsync()
+    {
+        status = await Presentations.SaveAsync(document!, ownerId) ? "All changes saved" : "This presentation no longer exists.";
+        StateHasChanged();
+    }
+
+    private async Task UndoAsync()
+    {
+        await SaveNowAsync();
+        if (historyPosition > 0)
+        {
+            await RestoreAsync(historyPosition - 1);
+        }
+    }
+
+    private Task RedoAsync() => RestoreAsync(historyPosition + 1);
+
+    private async Task RestoreAsync(int position)
+    {
+        historyPosition = position;
+        document = JsonSerializer.Deserialize<PresentationDocument>(history[position], Json)!;
+        current = Math.Min(current, document.Slides.Count - 1);
+        revision++;
+        await PersistAsync();
+    }
+
+    private void AddSlide()
+    {
+        document!.Slides.Insert(current + 1, new EditableSlide());
+        current++;
+        Changed();
+    }
+
+    private void DuplicateSlide(int index)
+    {
+        var copy = JsonSerializer.Deserialize<EditableSlide>(JsonSerializer.Serialize(document!.Slides[index], Json), Json)!;
+        document.Slides.Insert(index + 1, copy);
+        current = index + 1;
+        Changed();
+    }
+
+    private void DeleteSlide(int index)
+    {
+        document!.Slides.RemoveAt(index);
+        current = Math.Min(current, document.Slides.Count - 1);
+        Changed();
+    }
+
+    private void DropSlide(int target)
+    {
+        if (dragging is { } source && source != target)
+        {
+            MoveSlide(source, target);
+        }
+
+        dragging = null;
+    }
+
+    private void MoveSlide(int source, int target)
+    {
+        var slide = document!.Slides[source];
+        document.Slides.RemoveAt(source);
+        document.Slides.Insert(target, slide);
+        current = target;
+        Changed();
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        navigationGuard?.Dispose();
+        if (autosave is not null)
+        {
+            await autosave.DisposeAsync();
+        }
+    }
+}

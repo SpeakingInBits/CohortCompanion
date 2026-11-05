@@ -8,7 +8,9 @@ using CohortCompanion.Web.Components;
 using CohortCompanion.Web.Components.Account;
 using CohortCompanion.Web.Content;
 using CohortCompanion.Web.Data;
+using CohortCompanion.Web.Images;
 using CohortCompanion.Web.Live;
+using CohortCompanion.Web.Presentations;
 using CohortCompanion.Web.Quizzes;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -57,6 +59,13 @@ builder.Services.AddScoped<InviteCodeService>();
 builder.Services.AddRadzenComponents();
 builder.Services.AddSingleton<ContentSanitizer>();
 builder.Services.AddScoped<QuizService>();
+builder.Services.AddScoped<PresentationService>();
+
+var imageOptions = builder.Configuration.GetSection(ImageOptions.SectionName).Get<ImageOptions>() ?? new ImageOptions();
+builder.Services.AddSingleton<IImageStore>(string.IsNullOrWhiteSpace(imageOptions.BlobServiceUri)
+    ? new LocalImageStore(Path.Combine(builder.Environment.ContentRootPath, imageOptions.LocalPath))
+    : new BlobImageStore(imageOptions));
+builder.Services.AddSingleton<ImageService>();
 
 builder.Services.AddSignalR(options => options.MaximumReceiveMessageSize = 16 * 1024);
 builder.Services.AddSingleton<ISessionBroadcaster, HubSessionBroadcaster>();
@@ -93,6 +102,7 @@ app.MapAdditionalIdentityEndpoints();
 
 app.MapHub<SessionHub>(HubEvents.HubPath);
 app.MapJoinQrCode();
+app.MapImages();
 
 await app.InitializeDatabaseAsync();
 

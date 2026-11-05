@@ -1,0 +1,87 @@
+@* The editing surface. It wears the deck's theme, and each region of the layout is edited in place. *@
+@using CohortCompanion.Shared
+@using CohortCompanion.Web.Components.Shared
+@using CohortCompanion.Web.Presentations
+
+<div class="slide editing theme-@ThemeId background-@Slide.Content.Background">
+    @if (UsesTitle)
+    {
+        <input class="slide-title-input" maxlength="300" placeholder="Click to add a title" aria-label="Slide title"
+               @bind="Slide.Content.Title" @bind:event="oninput" @bind:after="Changed" />
+    }
+
+    @switch (Slide.Layout)
+    {
+        case SlideLayout.Title:
+        case SlideLayout.SectionHeader:
+        case SlideLayout.TitleContent:
+        case SlideLayout.Blank:
+            <RichTextEditor Value="@Slide.Content.Body" ValueChanged="SetBody" Height="20rem" Label="Slide text" />
+            break;
+
+        case SlideLayout.TwoColumns:
+            <div class="row g-2">
+                <div class="col-6"><RichTextEditor Value="@Slide.Content.Body" ValueChanged="SetBody" Height="20rem" Label="Left column" /></div>
+                <div class="col-6"><RichTextEditor Value="@Slide.Content.Body2" ValueChanged="SetBody2" Height="20rem" Label="Right column" /></div>
+            </div>
+            break;
+
+        case SlideLayout.Image:
+        case SlideLayout.ImageCaption:
+            <ImagePicker Value="@Slide.Content.ImageUrl" ValueChanged="SetImage" Label="Slide image" />
+            <label class="form-label mt-2" for="image-alt">Describe the image for screen readers</label>
+            <input id="image-alt" class="form-control" maxlength="300" @bind="Slide.Content.ImageAlt" @bind:after="Changed" />
+            @if (Slide.Layout == SlideLayout.ImageCaption)
+            {
+                <label class="form-label mt-2" for="caption">Caption</label>
+                <input id="caption" class="form-control" maxlength="500" @bind="Slide.Content.Caption" @bind:event="oninput" @bind:after="Changed" />
+            }
+            break;
+
+        case SlideLayout.Code:
+            <select class="form-select mb-2" style="max-width: 16rem" aria-label="Code language" @bind="Slide.Content.CodeLanguage" @bind:after="Changed">
+                <option value="">Detect automatically</option>
+                @foreach (var language in CodeLanguages.All)
+                {
+                    <option value="@language.Id">@language.Name</option>
+                }
+            </select>
+            <textarea class="form-control font-monospace mb-2" rows="8" spellcheck="false" aria-label="Code"
+                      @bind="Slide.Content.Code" @bind:event="oninput" @bind:after="Changed"></textarea>
+            @if (!string.IsNullOrEmpty(Slide.Content.Code))
+            {
+                <CodeBlock Code="@Slide.Content.Code" Language="@Slide.Content.CodeLanguage" />
+            }
+            break;
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public EditableSlide Slide { get; set; } = default!;
+
+    [Parameter] public string ThemeId { get; set; } = SlideThemes.DefaultTheme;
+
+    [Parameter] public EventCallback OnChanged { get; set; }
+
+    private bool UsesTitle => Slide.Layout != SlideLayout.Blank;
+
+    private Task Changed() => OnChanged.InvokeAsync();
+
+    private Task SetBody(string value)
+    {
+        Slide.Content.Body = value;
+        return Changed();
+    }
+
+    private Task SetBody2(string value)
+    {
+        Slide.Content.Body2 = value;
+        return Changed();
+    }
+
+    private Task SetImage(string? value)
+    {
+        Slide.Content.ImageUrl = value;
+        return Changed();
+    }
+}

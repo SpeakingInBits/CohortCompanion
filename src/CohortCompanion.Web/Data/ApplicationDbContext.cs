@@ -11,6 +11,10 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
 
     public DbSet<Question> Questions => Set<Question>();
 
+    public DbSet<Presentation> Presentations => Set<Presentation>();
+
+    public DbSet<Slide> Slides => Set<Slide>();
+
     public DbSet<LiveSession> LiveSessions => Set<LiveSession>();
 
     public DbSet<Participant> Participants => Set<Participant>();
@@ -22,6 +26,21 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
     protected override void OnModelCreating(ModelBuilder builder)
     {
         base.OnModelCreating(builder);
+
+        builder.Entity<Presentation>(presentation =>
+        {
+            presentation.Property(p => p.Title).HasMaxLength(200);
+            presentation.Property(p => p.ThemeId).HasMaxLength(30);
+            presentation.HasIndex(p => p.OwnerId);
+            presentation.HasOne(p => p.Owner)
+                .WithMany()
+                .HasForeignKey(p => p.OwnerId)
+                .OnDelete(DeleteBehavior.Restrict);
+            presentation.HasMany(p => p.Slides)
+                .WithOne()
+                .HasForeignKey(s => s.PresentationId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
 
         builder.Entity<LiveSession>(session =>
         {

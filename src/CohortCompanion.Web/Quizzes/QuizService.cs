@@ -108,7 +108,7 @@ public sealed class QuizService(
         Prompt = sanitizer.Sanitize(question.Prompt),
         CodeSnippet = Blank(question.CodeSnippet),
         CodeLanguage = Blank(question.CodeSnippet) is null ? null : Blank(question.CodeLanguage),
-        ImageUrl = Blank(question.ImageUrl),
+        ImageUrl = Images.ImageService.OwnImageOrNull(question.ImageUrl),
         TimeLimitSeconds = question.TimeLimitSeconds,
         Points = question.Points,
         AllowMultipleSelect = question.Type == QuestionType.MultipleChoice && question.AllowMultipleSelect,

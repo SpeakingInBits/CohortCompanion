@@ -315,6 +315,41 @@ namespace CohortCompanion.Web.Data.Migrations
                     b.ToTable("Participants");
                 });
 
+            modelBuilder.Entity("CohortCompanion.Web.Data.Presentation", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("OwnerId")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<string>("ThemeId")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<DateTime>("UpdatedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OwnerId");
+
+                    b.ToTable("Presentations");
+                });
+
             modelBuilder.Entity("CohortCompanion.Web.Data.Question", b =>
                 {
                     b.Property<int>("Id")
@@ -484,6 +519,38 @@ namespace CohortCompanion.Web.Data.Migrations
                     b.HasIndex("LiveSessionId");
 
                     b.ToTable("SessionSummaries");
+                });
+
+            modelBuilder.Entity("CohortCompanion.Web.Data.Slide", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("Content")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<int>("Layout")
+                        .HasColumnType("int");
+
+                    b.Property<int>("Order")
+                        .HasColumnType("int");
+
+                    b.Property<int>("PresentationId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("SpeakerNotes")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PresentationId");
+
+                    b.ToTable("Slides");
                 });
 
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityRole", b =>
@@ -699,6 +766,17 @@ namespace CohortCompanion.Web.Data.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("CohortCompanion.Web.Data.Presentation", b =>
+                {
+                    b.HasOne("CohortCompanion.Web.Data.ApplicationUser", "Owner")
+                        .WithMany()
+                        .HasForeignKey("OwnerId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Owner");
+                });
+
             modelBuilder.Entity("CohortCompanion.Web.Data.Question", b =>
                 {
                     b.HasOne("CohortCompanion.Web.Data.Quiz", null)
@@ -733,6 +811,15 @@ namespace CohortCompanion.Web.Data.Migrations
                     b.HasOne("CohortCompanion.Web.Data.LiveSession", null)
                         .WithMany()
                         .HasForeignKey("LiveSessionId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("CohortCompanion.Web.Data.Slide", b =>
+                {
+                    b.HasOne("CohortCompanion.Web.Data.Presentation", null)
+                        .WithMany("Slides")
+                        .HasForeignKey("PresentationId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
                 });
@@ -852,6 +939,11 @@ namespace CohortCompanion.Web.Data.Migrations
             modelBuilder.Entity("CohortCompanion.Web.Data.Participant", b =>
                 {
                     b.Navigation("Responses");
+                });
+
+            modelBuilder.Entity("CohortCompanion.Web.Data.Presentation", b =>
+                {
+                    b.Navigation("Slides");
                 });
 
             modelBuilder.Entity("CohortCompanion.Web.Data.Question", b =>
