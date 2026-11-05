@@ -69,6 +69,10 @@
         else if (phase.Phase == QuestionPhase.Finished)
         {
             <h1 class="h3 mt-5 text-center">That's the end of the quiz</h1>
+            @if (standing is not null)
+            {
+                <StandingView Standing="standing" Final="true" />
+            }
         }
         else if (phase.Question is null)
         {
@@ -82,6 +86,10 @@
             @if (phase.Results is not null)
             {
                 <ResultsView Results="phase.Results" />
+                @if (phase.Phase == QuestionPhase.AnswerRevealed && standing is not null)
+                {
+                    <StandingView Standing="standing" />
+                }
             }
             else if (phase.Phase == QuestionPhase.Open && !answered)
             {
@@ -114,6 +122,7 @@
     private HubConnection? hub;
     private StudentSessionState? state;
     private PhaseUpdate? phase;
+    private Standing? standing;
     private string? token;
     private string? joinCode;
     private string? nickname;
@@ -141,6 +150,11 @@
         hub.On<QuestionResults>(HubEvents.ResultsUpdated, results => InvokeAsync(() =>
         {
             phase = phase is null ? null : phase with { Results = results };
+            StateHasChanged();
+        }));
+        hub.On<Standing?>(HubEvents.LeaderboardUpdated, update => InvokeAsync(() =>
+        {
+            standing = update;
             StateHasChanged();
         }));
         hub.On<string>(HubEvents.NicknameChanged, name => InvokeAsync(() =>
@@ -259,6 +273,7 @@
     private void ApplyState(StudentSessionState restored)
     {
         state = restored;
+        standing = restored.MyStanding;
         answered = restored.MyAnswer is not null;
         screen = Screen.Live;
         SetPhase(restored.Phase);

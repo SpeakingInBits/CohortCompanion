@@ -27,7 +27,9 @@ public sealed record HostView(
     bool IsPaused,
     int ResponseCount,
     IReadOnlyList<ParticipantView> Participants,
-    QuestionResults? LiveResults);
+    QuestionResults? LiveResults,
+    bool IsTimed,
+    IReadOnlyList<LeaderboardEntry>? Leaderboard);
 
 public sealed record SessionListItem(Guid Id, string Title, SessionKind Kind, string JoinCode, SessionStatus Status, int ParticipantCount);
 
@@ -281,6 +283,8 @@ public sealed partial class LiveSessionManager(
             }
 
             var started = runtime.Extras.PhaseStartedUtc ?? now;
+            var elapsedMs = (int)Math.Max(0, (now - started).TotalMilliseconds);
+            var scored = Mark(runtime, question, cleaned, elapsedMs);
             runtime.Responses[(participantId, questionId)] = new LiveResponse
             {
                 Id = Guid.NewGuid(),
@@ -288,7 +292,9 @@ public sealed partial class LiveSessionManager(
                 QuestionId = questionId,
                 Answer = cleaned,
                 SubmittedAtUtc = now,
-                ElapsedMs = (int)Math.Max(0, (now - started).TotalMilliseconds),
+                ElapsedMs = elapsedMs,
+                IsCorrect = scored.IsCorrect,
+                Score = scored.Score,
             };
             runtime.HasUnsavedResponses = true;
             runtime.ViewsAreStale = true;
@@ -351,7 +357,9 @@ public sealed partial class LiveSessionManager(
                 runtime.Extras.PausedRemainingMs is not null,
                 count,
                 runtime.ActiveParticipants.OrderBy(p => p.Nickname, StringComparer.OrdinalIgnoreCase).Select(p => new ParticipantView(p.Id, p.Nickname)).ToList(),
-                question is null ? null : BuildResults(runtime, question, reveal: true));
+                question is null ? null : BuildResults(runtime, question, reveal: true),
+                runtime.Quiz?.Mode == QuizMode.Timed,
+                runtime.Quiz?.ScoringEnabled == true ? BuildLeaderboard(runtime, 5) : null);
         }
         finally
         {
@@ -519,7 +527,7 @@ public sealed partial class LiveSessionManager(
                 QuestionIndex = index,
                 PromptText = prompt.Length <= 500 ? prompt : prompt[..500],
                 ParticipantCount = participantCount,
-                AggregateJson = JsonSerializer.Serialize(BuildResults(runtime, question, reveal: true), Json),
+                AggregateJson = JsonSerializer.Serialize(BuildResults(runtime, question, reveal: true) with { AverageScore = AverageScore(runtime, question) }, Json),
             });
         }
 
@@ -572,7 +580,7 @@ public sealed partial class LiveSessionManager(
     {
         var question = runtime.CurrentQuestion;
         var mine = question is not null && runtime.Responses.TryGetValue((participant.Id, question.Id), out var response) ? response.Answer : null;
-        return new StudentSessionState(runtime.Kind, runtime.Title, participant.Nickname, BuildPhaseUpdate(runtime), mine);
+        return new StudentSessionState(runtime.Kind, runtime.Title, participant.Nickname, BuildPhaseUpdate(runtime), mine, BuildStanding(runtime, participant));
     }
 
     private ProjectorState BuildProjectorState(LiveRuntime runtime)
@@ -585,7 +593,8 @@ public sealed partial class LiveSessionManager(
             runtime.ActiveParticipants.Select(p => p.Nickname).Order(StringComparer.OrdinalIgnoreCase).Take(200).ToList(),
             runtime.ActiveParticipants.Count(),
             question is null ? 0 : runtime.ResponsesFor(question.Id).Count(),
-            BuildPhaseUpdate(runtime, forProjector: true));
+            BuildPhaseUpdate(runtime, forProjector: true),
+            ShowsLeaderboard(runtime) ? BuildLeaderboard(runtime, 5) : null);
     }
 
     /// <summary>Tells everyone about a phase change, after saving it so a restart can recover from here.</summary>
