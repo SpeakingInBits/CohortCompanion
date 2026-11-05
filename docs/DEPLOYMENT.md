@@ -64,9 +64,10 @@ $conn.Close()
 
 The app can't start until this is done, so if it was already deployed, restart it afterward.
 
-`db_owner` is needed because the app applies migrations at startup (`Database:MigrateOnStartup`). For the school's
-production setup, consider running migrations from the deployment pipeline instead and granting the app only
-`db_datareader` and `db_datawriter`.
+`db_owner` is needed because the app applies migrations at startup (`Database:MigrateOnStartup`). The Deploy workflow
+applies them first, so this finds nothing to do after a workflow deploy, but deploying from your machine still relies
+on it. For the school's production setup, consider turning that setting off and granting the app only `db_datareader`
+and `db_datawriter`.
 
 ## 3. Deploy the app
 
@@ -82,13 +83,22 @@ Zip the contents of `publish`, then:
 az webapp deploy --resource-group cohortcompanion-demo --name <webAppName> --src-path publish.zip --type zip
 ```
 
-**Or from GitHub Actions:** the **Deploy** workflow runs the tests, publishes, and deploys. It needs a one-time
-setup:
+**Or from GitHub Actions:** run the **Deploy** workflow from the Actions tab, on `main`. It runs the tests, applies any
+new database migrations, deploys the app, and waits for the site to answer. If a migration fails, the app isn't deployed.
+
+Migrations run before the new code goes live, so the old code briefly runs against the new schema. Keep them compatible
+with the previous release: for example, stop using a column in one release and drop it in the next.
+
+It needs a one-time setup:
 
 1. Create a Microsoft Entra app registration with a federated credential for this repository's `demo` environment.
-   Give it the Website Contributor role on the web app.
-2. In the repository, create an environment named `demo`.
-3. Add the secrets `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, and `AZURE_SUBSCRIPTION_ID`, and the variable `AZURE_WEBAPP_NAME`.
+   Give it the Website Contributor role on the web app, and SQL Security Manager on the SQL server. The second role
+   lets the workflow open the database firewall to its runner, and close it again.
+2. Give the app registration a database user, the same way as in step 2, using its display name. It needs `db_owner`
+   to apply migrations.
+3. In the repository, create an environment named `demo`, and limit its deployment branches to `main`.
+4. In that environment, add the secrets `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, and `AZURE_SUBSCRIPTION_ID`, and the
+   variables `AZURE_WEBAPP_NAME`, `AZURE_RESOURCE_GROUP`, and `AZURE_SQL_SERVER`.
 
 ## 4. First sign-in
 
