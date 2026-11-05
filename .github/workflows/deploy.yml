@@ -12,11 +12,20 @@ concurrency:
   group: deploy
   cancel-in-progress: false
 
+env:
+  FIREWALL_RULE: github-deploy
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
     environment: demo
     steps:
+      - name: Only deploy main
+        if: github.ref != 'refs/heads/main'
+        run: |
+          echo "::error::Deploy only runs from main, and this run is on $GITHUB_REF_NAME."
+          exit 1
+
       - uses: actions/checkout@v4
 
       - uses: actions/setup-dotnet@v4
@@ -29,13 +38,61 @@ jobs:
       - name: Publish
         run: dotnet publish src/CohortCompanion.Web --configuration Release --output publish
 
+      - name: Build the migration bundle
+        run: |
+          dotnet tool restore
+          dotnet ef migrations bundle --project src/CohortCompanion.Web --configuration Release --self-contained --target-runtime linux-x64 --output efbundle
+
       - uses: azure/login@v2
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
+      - name: Let this runner reach the database
+        id: firewall
+        env:
+          RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+          SQL_SERVER: ${{ vars.AZURE_SQL_SERVER }}
+        run: |
+          ip=$(curl --fail --silent --show-error https://api.ipify.org)
+          az sql server firewall-rule create --resource-group "$RESOURCE_GROUP" --server "$SQL_SERVER" --name "$FIREWALL_RULE" --start-ip-address "$ip" --end-ip-address "$ip" --output none
+
+      # Runs before the new code goes live, and a failure here stops the deploy. The bundle starts the app's host,
+      # which needs this connection string. The retries cover the firewall rule taking a moment to apply.
+      - name: Apply database migrations
+        env:
+          ConnectionStrings__DefaultConnection: "Server=tcp:${{ vars.AZURE_SQL_SERVER }}.database.windows.net,1433;Database=CohortCompanion;Authentication=Active Directory Default;Encrypt=True;TrustServerCertificate=False;Connection Timeout=30;"
+        run: |
+          for attempt in 1 2 3; do
+            ./efbundle && exit 0
+            [ "$attempt" = 3 ] || sleep 30
+          done
+          exit 1
+
+      - name: Remove the runner's database access
+        if: always() && steps.firewall.conclusion != 'skipped'
+        env:
+          RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+          SQL_SERVER: ${{ vars.AZURE_SQL_SERVER }}
+        run: az sql server firewall-rule delete --resource-group "$RESOURCE_GROUP" --server "$SQL_SERVER" --name "$FIREWALL_RULE"
+
       - uses: azure/webapps-deploy@v3
         with:
           app-name: ${{ vars.AZURE_WEBAPP_NAME }}
           package: publish
+
+      # A restart can take a couple of minutes on B1. App Service's placeholder page returns 404 here.
+      - name: Wait for the site to answer
+        env:
+          WEBAPP_NAME: ${{ vars.AZURE_WEBAPP_NAME }}
+        run: |
+          url="https://$WEBAPP_NAME.azurewebsites.net/privacy"
+          for attempt in $(seq 1 30); do
+            status=$(curl --silent --output /dev/null --write-out '%{http_code}' --max-time 20 "$url" || true)
+            echo "Attempt $attempt: $status"
+            [ "$status" = 200 ] && exit 0
+            sleep 15
+          done
+          echo "::error::$url didn't return 200 in time."
+          exit 1
