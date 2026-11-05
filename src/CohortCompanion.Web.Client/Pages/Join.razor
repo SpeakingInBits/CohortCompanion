@@ -51,7 +51,11 @@
     {
         <div class="d-flex justify-content-between align-items-center mb-3">
             <span class="fw-semibold">@state.Nickname</span>
-            @if (reconnecting)
+            @if (connectionLost)
+            {
+                <span class="text-danger" role="alert">Connection lost. Reload this page.</span>
+            }
+            else if (reconnecting)
             {
                 <span class="text-warning" role="status">Reconnecting…</span>
             }
@@ -117,6 +121,7 @@
 
 @code {
     private const string TokenKey = "cc.participant";
+    private const int MaxRejoinAttempts = 6;
 
     private enum Screen { Connecting, Form, Live, Removed, Ended }
 
@@ -137,6 +142,7 @@
     private bool busy;
     private bool answered;
     private bool reconnecting;
+    private bool connectionLost;
     private DateTime? deadlineUtc;
     private Timer? countdown;
 
@@ -262,22 +268,40 @@
             return;
         }
 
-        try
+        // A connection that isn't rejoined looks fine but receives nothing, so this can't fail quietly. The random
+        // wait spreads a whole class out, instead of everyone retrying in the same instant.
+        for (var attempt = 1; attempt <= MaxRejoinAttempts; attempt++)
         {
-            var restored = await hub.InvokeAsync<StudentSessionState?>("Rejoin", token);
-            if (restored is not null)
+            try
             {
-                ApplyState(restored);
+                var restored = await hub.InvokeAsync<StudentSessionState?>("Rejoin", token);
+                if (restored is not null)
+                {
+                    ApplyState(restored);
+                }
+                else
+                {
+                    await ClearTokenAsync();
+                    screen = state is null ? Screen.Form : Screen.Ended;
+                }
+
+                connectionLost = false;
+                reconnecting = false;
+                StateHasChanged();
+                return;
             }
-            else
+            catch (Exception) when (attempt < MaxRejoinAttempts)
             {
-                await ClearTokenAsync();
-                screen = state is null ? Screen.Form : Screen.Ended;
+                reconnecting = true;
+                StateHasChanged();
+                await Task.Delay(TimeSpan.FromSeconds(attempt + (Random.Shared.NextDouble() * 3)));
             }
-        }
-        catch (Exception)
-        {
-            screen = state is null ? Screen.Form : screen;
+            catch (Exception)
+            {
+                reconnecting = false;
+                connectionLost = state is not null;
+                screen = state is null ? Screen.Form : screen;
+            }
         }
 
         StateHasChanged();
