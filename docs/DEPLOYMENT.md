@@ -112,7 +112,8 @@ invite codes for your testers.
 ## Running it
 
 - **Deploy outside class hours.** A deployment restarts the app, and B1 has no deployment slots. Live sessions recover
-  and students reconnect by themselves, but they'll see a pause.
+  and students reconnect by themselves, but they'll see a pause. On B1, the site returned 500 errors for about two
+  minutes during a deployment, until the new version finished starting.
 - **Scaling up** is a settings change: redeploy the Bicep with a different `planSku`. It can restart the app. Check the
   connection limit for the size you choose: S1 and P1v3 have the same limit as B1.
 - **Moving the database up** is also a settings change: redeploy the Bicep with a different `databaseSku`. Basic has
