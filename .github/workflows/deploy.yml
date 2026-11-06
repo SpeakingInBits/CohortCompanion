@@ -26,9 +26,9 @@ jobs:
           echo "::error::Deploy only runs from main, and this run is on $GITHUB_REF_NAME."
           exit 1
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/setup-dotnet@v6
         with:
           dotnet-version: 10.0.x
 
@@ -43,7 +43,7 @@ jobs:
           dotnet tool restore
           dotnet ef migrations bundle --project src/CohortCompanion.Web --configuration Release --self-contained --target-runtime linux-x64 --output efbundle
 
-      - uses: azure/login@v2
+      - uses: azure/login@v3
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
