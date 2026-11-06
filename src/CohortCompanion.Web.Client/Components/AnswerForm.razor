@@ -3,30 +3,38 @@
 @switch (Question.Type)
 {
     case QuestionType.MultipleChoice:
-        @foreach (var option in Question.Options)
-        {
-            <button type="button" class="btn option-choice @(selected.Contains(option.Index) ? "btn-primary" : "btn-outline-primary")"
-                    aria-pressed="@(selected.Contains(option.Index) ? "true" : "false")"
-                    @onclick="() => Toggle(option.Index)">
-                @option.Text
-                @if (!string.IsNullOrEmpty(option.CodeSnippet))
-                {
-                    <code class="d-block">@option.CodeSnippet</code>
-                }
-            </button>
-        }
         @if (Question.AllowMultipleSelect)
         {
-            <p class="form-text">Select all that apply.</p>
+            <p class="answer-hint">Select all that apply.</p>
         }
+        <div class="option-list">
+            @for (var i = 0; i < Question.Options.Count; i++)
+            {
+                var option = Question.Options[i];
+                var isSelected = selected.Contains(option.Index);
+                <button type="button" class="option-choice opt-@(i % 4) @(isSelected ? "is-selected" : "")" style="--i: @i"
+                        aria-pressed="@(isSelected ? "true" : "false")"
+                        @onclick="() => Toggle(option.Index)">
+                    <span class="option-letter" aria-hidden="true">@((char)('A' + i % 26))</span>
+                    <span class="option-text">
+                        @option.Text
+                        @if (!string.IsNullOrEmpty(option.CodeSnippet))
+                        {
+                            <code class="d-block">@option.CodeSnippet</code>
+                        }
+                    </span>
+                    <svg class="option-check" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5" /></svg>
+                </button>
+            }
+        </div>
         break;
 
     case QuestionType.WordCloud:
         @for (var i = 0; i < entries.Length; i++)
         {
             var index = i;
-            <input class="form-control mb-2" maxlength="@AnswerLimits.MaxEntryLength" aria-label="Word @(index + 1)" placeholder="Your word"
-                   value="@entries[index]" @oninput="e => entries[index] = e.Value?.ToString() ?? string.Empty" />
+            <input class="form-control form-control-lg mb-2" maxlength="@AnswerLimits.MaxEntryLength" aria-label="Word @(index + 1)" placeholder="Your word"
+                   enterkeyhint="done" value="@entries[index]" @oninput="e => entries[index] = e.Value?.ToString() ?? string.Empty" />
         }
         break;
 
@@ -35,13 +43,21 @@
         {
             var index = i;
             <label class="form-label" for="blank-@index">Blank @(index + 1)</label>
-            <input id="blank-@index" class="form-control mb-2" maxlength="@AnswerLimits.MaxBlankLength" autocomplete="off" autocapitalize="off"
-                   value="@blanks[index]" @oninput="e => blanks[index] = e.Value?.ToString() ?? string.Empty" />
+            <input id="blank-@index" class="form-control form-control-lg mb-2" maxlength="@AnswerLimits.MaxBlankLength" autocomplete="off" autocapitalize="off"
+                   enterkeyhint="done" value="@blanks[index]" @oninput="e => blanks[index] = e.Value?.ToString() ?? string.Empty" />
         }
         break;
 }
 
-<button type="button" class="btn btn-success btn-lg w-100 mt-2" disabled="@(Busy || !HasAnswer)" @onclick="SubmitAsync">Submit</button>
+<div class="answer-submit">
+    <button type="button" class="btn btn-primary btn-lg w-100" disabled="@(Busy || !HasAnswer)" @onclick="SubmitAsync">
+        @if (Busy)
+        {
+            <span class="spinner-border spinner-border-sm me-2" aria-hidden="true"></span>
+        }
+        Submit
+    </button>
+</div>
 
 @code {
     [Parameter, EditorRequired] public StudentQuestion Question { get; set; } = default!;

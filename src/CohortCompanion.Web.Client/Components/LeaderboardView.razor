@@ -1,15 +1,35 @@
 @* The top of the class on the projector. Nobody's low score is ever shown publicly. *@
 
-<h2 class="mt-4">@(Podium ? "Final podium" : "Leaderboard")</h2>
-<ol class="list-unstyled">
-    @foreach (var entry in Podium ? Entries.Take(3) : Entries)
-    {
-        <li class="d-flex justify-content-between border-bottom py-1">
-            <span>@entry.Rank. @entry.Nickname</span>
-            <strong>@entry.Score</strong>
-        </li>
-    }
-</ol>
+<h2 class="board-title">@(Podium ? "Final podium" : "Leaderboard")</h2>
+@if (Podium)
+{
+    <ol class="podium">
+        @foreach (var entry in Entries.Take(3))
+        {
+            <li class="podium-place place-@entry.Rank" @key="entry.Nickname">
+                <Avatar Name="@entry.Nickname" Class="avatar-lg" />
+                <span class="podium-name">@entry.Nickname</span>
+                <strong class="podium-score">@entry.Score</strong>
+                <div class="podium-block"><span>@entry.Rank</span></div>
+            </li>
+        }
+    </ol>
+}
+else
+{
+    var position = 0;
+    <ol class="board">
+        @foreach (var entry in Entries)
+        {
+            <li class="board-row" style="--i: @(position++)" @key="entry.Nickname">
+                <span class="board-rank">@entry.Rank</span>
+                <Avatar Name="@entry.Nickname" />
+                <span class="board-name">@entry.Nickname</span>
+                <strong>@entry.Score</strong>
+            </li>
+        }
+    </ol>
+}
 
 @code {
     [Parameter, EditorRequired] public IReadOnlyList<LeaderboardEntry> Entries { get; set; } = [];

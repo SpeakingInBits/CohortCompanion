@@ -2,18 +2,35 @@
 
 <PageTitle>CohortCompanion</PageTitle>
 
-<h1>CohortCompanion</h1>
+<section class="hero">
+    <div class="hero-copy">
+        <h1>CohortCompanion</h1>
+        <p class="lead">Live presentations and quizzes for your classroom.</p>
+        <a class="btn btn-primary btn-lg" href="join">Join a session</a>
+    </div>
 
-<p class="lead">Live presentations and quizzes for your classroom.</p>
-
-<p><a class="btn btn-primary" href="join">Join a session</a></p>
+    <div class="hero-phone" aria-hidden="true">
+        <div class="hero-phone-bar"><i class="live-dot"></i> Live</div>
+        <div class="hero-phone-prompt"></div>
+        <div class="hero-phone-prompt is-short"></div>
+        <div class="hero-result" style="--w: 72%; --i: 0"><span></span></div>
+        <div class="hero-result is-best" style="--w: 92%; --i: 1"><span></span></div>
+        <div class="hero-result" style="--w: 38%; --i: 2"><span></span></div>
+        <div class="hero-result" style="--w: 54%; --i: 3"><span></span></div>
+    </div>
+</section>
 
 <AuthorizeView Roles="@Roles.Instructor">
     <Authorized>
-        <p>Welcome back, @context.User.Identity?.Name. Go to your <a href="quizzes">quizzes</a> or <a href="presentations">presentations</a>.</p>
+        <p class="home-note">Welcome back, @context.User.Identity?.Name.</p>
+        <div class="home-tiles">
+            <a class="home-tile" href="quizzes"><strong>Quizzes</strong><span>Write questions and run them live</span></a>
+            <a class="home-tile" href="presentations"><strong>Presentations</strong><span>Build slides your class can follow</span></a>
+            <a class="home-tile" href="sessions"><strong>Sessions</strong><span>Rejoin a live session or see past totals</span></a>
+        </div>
     </Authorized>
     <NotAuthorized>
-        <p>
+        <p class="home-note">
             Instructors: <a href="Account/Login">log in</a>, or
             <a href="Account/Register">register with an invite code</a>.
         </p>

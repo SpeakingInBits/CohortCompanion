@@ -1,0 +1,16 @@
+@* A student's initial on a color picked from their nickname, so the same name always looks the same. *@
+
+<span class="avatar @Class" style="--avatar-hue: @Hue" aria-hidden="true">@Initial</span>
+
+@code {
+    [Parameter, EditorRequired] public string Name { get; set; } = "";
+
+    [Parameter] public string? Class { get; set; }
+
+    private string Initial => Name.Trim() is { Length: > 0 } name
+        ? char.ToUpperInvariant(name[0]).ToString()
+        : "?";
+
+    // string.GetHashCode changes between runs, and the projector and phones have to agree.
+    private int Hue => Name.Aggregate(0, (hash, c) => (hash * 31 + c) % 360);
+}

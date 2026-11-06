@@ -1,10 +1,10 @@
 @* The prompt, image, and code of a question, as students and the projector see it. *@
 
-<div class="prompt mb-3">@((MarkupString)Question.Prompt)</div>
+<div class="prompt">@((MarkupString)Question.Prompt)</div>
 
 @if (!string.IsNullOrEmpty(Question.ImageUrl))
 {
-    <img src="@Question.ImageUrl" alt="" class="img-fluid rounded mb-3" />
+    <img src="@Question.ImageUrl" alt="" class="question-image" />
 }
 
 @if (!string.IsNullOrEmpty(Question.CodeSnippet))

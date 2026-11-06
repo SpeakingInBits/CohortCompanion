@@ -3,24 +3,25 @@
 @if (Results.Options is { } options)
 {
     var total = Math.Max(1, Results.ResponseCount);
+    var position = 0;
     @foreach (var option in options)
     {
-        <div class="result-row @(option.IsCorrect == true ? "is-correct" : "")">
-            <div class="d-flex justify-content-between gap-2">
+        <div class="result-row @(option.IsCorrect == true ? "is-correct" : option.IsCorrect == false ? "is-wrong" : "")" style="--i: @(position++)">
+            <div class="result-bar"><div style="width: @(option.Count * 100 / total)%"></div></div>
+            <div class="result-main">
                 <span>
                     @if (option.IsCorrect == true)
                     {
-                        <span aria-label="Correct answer">✓ </span>
+                        <span class="result-tick" aria-label="Correct answer">✓ </span>
                     }
                     @option.Text
+                    @if (!string.IsNullOrEmpty(option.CodeSnippet))
+                    {
+                        <code class="d-block">@option.CodeSnippet</code>
+                    }
                 </span>
-                <span>@option.Count</span>
+                <span class="result-count">@option.Count</span>
             </div>
-            @if (!string.IsNullOrEmpty(option.CodeSnippet))
-            {
-                <code>@option.CodeSnippet</code>
-            }
-            <div class="result-bar"><div style="width: @(option.Count * 100 / total)%"></div></div>
         </div>
     }
 }
@@ -33,10 +34,11 @@ else if (Results.Words is { } words)
     else
     {
         var largest = words.Max(w => w.Count);
+        var position = 0;
         <div class="word-cloud">
             @foreach (var word in words)
             {
-                <span style="font-size: @(FontSize(word.Count, largest))em">
+                <span class="word word-@(position++ % 5)" style="font-size: @(FontSize(word.Count, largest))em" @key="word.Word">
                     @word.Word
                     @if (OnHide.HasDelegate)
                     {
@@ -52,6 +54,7 @@ else if (Results.Blanks is { } blanks)
     @foreach (var blank in blanks)
     {
         var total = Math.Max(1, blank.Answers.Sum(a => a.Count));
+        var position = 0;
         <h3 class="h6 mt-3">Blank @blank.Blank</h3>
         @if (blank.Answers.Count == 0)
         {
@@ -59,16 +62,17 @@ else if (Results.Blanks is { } blanks)
         }
         @foreach (var answer in blank.Answers)
         {
-            <div class="result-row @(answer.IsAccepted == true ? "is-correct" : "")">
-                <div class="d-flex justify-content-between gap-2">
+            <div class="result-row @(answer.IsAccepted == true ? "is-correct" : "")" style="--i: @(position++)">
+                <div class="result-bar"><div style="width: @(answer.Count * 100 / total)%"></div></div>
+                <div class="result-main">
                     <span>
                         @if (answer.IsAccepted == true)
                         {
-                            <span aria-label="Accepted answer">✓ </span>
+                            <span class="result-tick" aria-label="Accepted answer">✓ </span>
                         }
                         @answer.Text
                     </span>
-                    <span>
+                    <span class="result-count">
                         @if (OnHide.HasDelegate)
                         {
                             <button type="button" class="btn btn-sm btn-link p-0 me-2" @onclick="() => OnHide.InvokeAsync(answer.Text)">Hide</button>
@@ -80,7 +84,6 @@ else if (Results.Blanks is { } blanks)
                         @answer.Count
                     </span>
                 </div>
-                <div class="result-bar"><div style="width: @(answer.Count * 100 / total)%"></div></div>
             </div>
         }
     }
