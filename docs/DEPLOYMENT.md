@@ -86,6 +86,18 @@ az webapp deploy --resource-group cohortcompanion-demo --name <webAppName> --src
 **Or from GitHub Actions:** run the **Deploy** workflow from the Actions tab, on `main`. It runs the tests, applies any
 new database migrations, deploys the app, and waits for the site to answer. If a migration fails, the app isn't deployed.
 
+Once the site answers, the workflow creates a GitHub release with a `vX.Y.Z` tag and a list of the changes since the last
+release. Choose what's in the release when you start the run, which picks the version number:
+
+| Choice | Example |
+|---|---|
+| Bug fixes | `v1.2.3` to `v1.2.4` |
+| New features | `v1.2.3` to `v1.3.0` |
+| Breaking changes | `v1.2.3` to `v2.0.0` |
+
+To choose the number yourself, enter it under **Version number**. It has to be newer than the latest release. If a deploy
+fails, no release is created, and the next run uses the same number. If only the release fails, re-run that failed job.
+
 Migrations run before the new code goes live, so the old code briefly runs against the new schema. Keep them compatible
 with the previous release: for example, stop using a column in one release and drop it in the next.
 
