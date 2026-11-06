@@ -4,7 +4,7 @@
 
 <div class="top-row ps-3 navbar navbar-dark">
     <div class="container-fluid">
-        <a class="navbar-brand" href="">CohortCompanion</a>
+        <a class="navbar-brand" href=""><BrandMark /> CohortCompanion</a>
     </div>
 </div>
 
@@ -21,17 +21,17 @@
         <AuthorizeView Roles="@($"{Roles.Instructor},{Roles.Admin}")">
             <div class="nav-item px-3">
                 <NavLink class="nav-link" href="quizzes">
-                    <span class="bi bi-list-nested-nav-menu" aria-hidden="true"></span> Quizzes
+                    <span class="bi bi-quiz-nav-menu" aria-hidden="true"></span> Quizzes
                 </NavLink>
             </div>
         <div class="nav-item px-3">
                 <NavLink class="nav-link" href="presentations">
-                    <span class="bi bi-list-nested-nav-menu" aria-hidden="true"></span> Presentations
+                    <span class="bi bi-screen-nav-menu" aria-hidden="true"></span> Presentations
                 </NavLink>
             </div>
             <div class="nav-item px-3">
                 <NavLink class="nav-link" href="sessions">
-                    <span class="bi bi-list-nested-nav-menu" aria-hidden="true"></span> Sessions
+                    <span class="bi bi-broadcast-nav-menu" aria-hidden="true"></span> Sessions
                 </NavLink>
             </div>
         </AuthorizeView>
@@ -44,7 +44,7 @@
             </div>
             <div class="nav-item px-3">
                 <NavLink class="nav-link" href="admin/instructors">
-                    <span class="bi bi-list-nested-nav-menu" aria-hidden="true"></span> Instructors
+                    <span class="bi bi-people-nav-menu" aria-hidden="true"></span> Instructors
                 </NavLink>
             </div>
         </AuthorizeView>

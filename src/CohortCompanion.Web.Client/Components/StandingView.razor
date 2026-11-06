@@ -1,23 +1,55 @@
 @* A student's own score and rank. Only that student ever sees this. *@
 
-<div class="alert @(Final ? "alert-primary" : Standing.LastAnswerCorrect == true ? "alert-success" : "alert-secondary") mt-3 text-center" role="status">
-    @if (!Final && Standing.LastAnswerCorrect is { } correct)
+<div class="standing @Tone" role="status">
+    @if (Celebrate)
     {
-        <div class="fw-semibold">@(correct ? "Correct!" : "Not this time")</div>
+        <div class="confetti" aria-hidden="true">
+            @for (var i = 0; i < ConfettiPieces; i++)
+            {
+                <i class="confetti-@(i % 4)" style="--x: @(i * 37 % 100)%; --delay: @(i * 23 % 260)ms; --drift: @((i % 2 == 0 ? 1 : -1) * (12 + i * 7 % 30))px"></i>
+            }
+        </div>
+    }
+
+    @if (Final)
+    {
+        <div class="standing-headline">Your final score</div>
+    }
+    else if (Standing.LastAnswerCorrect is { } correct)
+    {
+        <div class="standing-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24"><path d="@(correct ? "M5 12.5l4.5 4.5L19 7.5" : "M7 7l10 10M17 7L7 17")" /></svg>
+        </div>
+        <div class="standing-headline">@(correct ? "Correct!" : "Not this time")</div>
         @if (Standing.LastQuestionScore > 0)
         {
-            <div>+@Standing.LastQuestionScore points</div>
+            <div class="standing-points">+@Standing.LastQuestionScore points</div>
         }
     }
-    <div>Your score: <strong>@Standing.Score</strong></div>
-    @if (Standing.Rank is { } rank)
-    {
-        <div>You're number @rank of @Standing.ParticipantCount</div>
-    }
+
+    <div class="standing-stats">
+        <div>
+            <strong>@Standing.Score</strong>
+            <span>Your score</span>
+        </div>
+        @if (Standing.Rank is { } rank)
+        {
+            <div>
+                <strong>#@rank</strong>
+                <span>of @Standing.ParticipantCount</span>
+            </div>
+        }
+    </div>
 </div>
 
 @code {
+    private const int ConfettiPieces = 18;
+
     [Parameter, EditorRequired] public Standing Standing { get; set; } = default!;
 
     [Parameter] public bool Final { get; set; }
+
+    private bool Celebrate => Final ? Standing.Rank is <= 3 : Standing.LastAnswerCorrect == true;
+
+    private string Tone => Final ? "is-final" : Standing.LastAnswerCorrect == true ? "is-correct" : "";
 }

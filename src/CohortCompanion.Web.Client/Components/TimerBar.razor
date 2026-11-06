@@ -1,0 +1,16 @@
+@* The time left on a question, as a bar across the top of the screen. The number stays in the page header. *@
+
+<div class="timer-bar @(Urgent ? "is-urgent" : "") @(Paused ? "is-paused" : "")" aria-hidden="true">
+    <div style="width: @Width%"></div>
+</div>
+
+@code {
+    /// <summary>Between 0 (out of time) and 1 (all the time left).</summary>
+    [Parameter] public double Fraction { get; set; }
+
+    [Parameter] public bool Urgent { get; set; }
+
+    [Parameter] public bool Paused { get; set; }
+
+    private string Width => (Math.Clamp(Fraction, 0, 1) * 100).ToString("0.0", System.Globalization.CultureInfo.InvariantCulture);
+}

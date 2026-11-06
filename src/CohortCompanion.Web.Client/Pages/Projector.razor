@@ -8,45 +8,52 @@
 @implements IAsyncDisposable
 @inject NavigationManager Navigation
 
-<main class="live-shell projector">
+<main class="live-shell projector" data-bs-theme="dark">
     @if (message is not null)
     {
-        <h1 class="text-center mt-5">@message</h1>
+        <div class="live-center">
+            <h1>@message</h1>
+        </div>
     }
     else if (view is null)
     {
-        <p class="text-secondary text-center mt-5" role="status">Connecting…</p>
+        <div class="live-center">
+            <div class="live-pulse"><BrandMark /></div>
+            <p role="status">Connecting…</p>
+        </div>
     }
     else if (view.Phase.Status == SessionStatus.Lobby)
     {
-        <div class="row align-items-center">
-            <div class="col-md-7 text-center">
+        <div class="projector-lobby">
+            <div class="projector-lobby-join">
                 <h1>@view.Title</h1>
-                <p class="mb-1">Go to <strong>@JoinHost/join</strong> and enter</p>
+                <p>Go to <strong>@JoinHost/join</strong> and enter</p>
                 <div class="join-code">@view.JoinCode</div>
-                <p class="mt-3">@view.ParticipantCount joined</p>
             </div>
-            <div class="col-md-5 text-center">
+            <div class="qr-frame">
                 <img class="qr-code" src="qr/@(view.JoinCode).svg" alt="QR code to join" />
             </div>
         </div>
-        <div class="mt-4 text-center">
+        <p class="projector-count"><strong @key="view.ParticipantCount">@view.ParticipantCount</strong> joined</p>
+        <div class="nickname-chips">
             @foreach (var name in view.Nicknames)
             {
-                <span class="nickname-chip">@name</span>
+                <span class="nickname-chip" @key="name"><Avatar Name="@name" /> @name</span>
             }
         </div>
     }
     else if (view.Slide is { } slide)
     {
         <div class="projector-slide">
-            <SlideRenderer Layout="slide.Layout" Content="slide.Content" ThemeId="@(view.ThemeId ?? SlideThemes.DefaultTheme)" />
+            <div class="projector-slide-frame" @key="slide.Index">
+                <SlideRenderer Layout="slide.Layout" Content="slide.Content" ThemeId="@(view.ThemeId ?? SlideThemes.DefaultTheme)" />
+            </div>
             <span class="projector-join">Join: <strong>@view.JoinCode</strong></span>
         </div>
     }
     else if (view.Phase.Phase == QuestionPhase.Finished)
     {
-        <h1 class="text-center mt-5">That's the end of the quiz</h1>
+        <h1 class="projector-finish">That's the end of the quiz</h1>
         @if (view.Leaderboard is { Count: > 0 } podium)
         {
             <LeaderboardView Entries="podium" Podium="true" />
@@ -54,50 +61,65 @@
     }
     else if (view.Phase.Question is { } question)
     {
-        <div class="d-flex justify-content-between align-items-center mb-3">
-            <span class="text-secondary">Question @(view.Phase.QuestionIndex + 1) of @view.Phase.QuestionCount</span>
+        @if (view.Phase.Phase == QuestionPhase.Open && RemainingSeconds is { } secondsLeft)
+        {
+            <TimerBar Fraction="TimerFraction" Urgent="@(secondsLeft <= UrgentSeconds)" Paused="view.Phase.IsPaused" />
+        }
+
+        <div class="projector-header">
+            <span class="question-count">Question @(view.Phase.QuestionIndex + 1) of @view.Phase.QuestionCount</span>
             <span class="d-flex align-items-center gap-4">
                 @if (view.Phase.Phase == QuestionPhase.Open)
                 {
                     <span>@view.ResponseCount of @view.ParticipantCount answered</span>
                     @if (RemainingSeconds is { } seconds)
                     {
-                        <span class="live-timer" role="timer">@(view.Phase.IsPaused ? "Paused" : $"{seconds}s")</span>
+                        <span class="live-pill live-timer @(seconds <= UrgentSeconds && !view.Phase.IsPaused ? "is-urgent" : "")" role="timer">@(view.Phase.IsPaused ? "Paused" : $"{seconds}s")</span>
                     }
                 }
                 <span>Join: <strong>@view.JoinCode</strong></span>
             </span>
         </div>
 
-        <QuestionView Question="question" />
+        <div class="question-screen" @key="question.Id">
+            <QuestionView Question="question" />
 
-        @if (view.Phase.Results is { } results)
-        {
-            <ResultsView Results="results" />
-            @if (view.Leaderboard is { Count: > 0 } leaderboard)
+            @if (view.Phase.Results is { } results)
             {
-                <LeaderboardView Entries="leaderboard" />
+                <div class="projector-results">
+                    <div><ResultsView Results="results" /></div>
+                    @if (view.Leaderboard is { Count: > 0 } leaderboard)
+                    {
+                        <div><LeaderboardView Entries="leaderboard" /></div>
+                    }
+                </div>
             }
-        }
-        else if (question.Options.Count > 0)
-        {
-            <ol type="A">
-                @foreach (var option in question.Options)
-                {
-                    <li>@option.Text</li>
-                }
-            </ol>
-        }
+            else if (question.Options.Count > 0)
+            {
+                <ol class="projector-options">
+                    @for (var i = 0; i < question.Options.Count; i++)
+                    {
+                        <li class="opt-@(i % 4)" style="--i: @i">
+                            <span class="option-letter" aria-hidden="true">@((char)('A' + i % 26))</span>
+                            @question.Options[i].Text
+                        </li>
+                    }
+                </ol>
+            }
+        </div>
     }
 </main>
 
 @code {
+    private const int UrgentSeconds = 5;
+
     [Parameter] public Guid SessionId { get; set; }
 
     private HubConnection? hub;
     private ProjectorState? view;
     private string? message;
     private DateTime? deadlineUtc;
+    private int timerTotalMs;
     private Timer? countdown;
 
     private string JoinHost => new Uri(Navigation.BaseUri).Authority;
@@ -105,6 +127,17 @@
     private int? RemainingSeconds => view?.Phase.IsPaused == true
         ? (view.Phase.RemainingMs ?? 0) / 1000
         : deadlineUtc is { } deadline ? (int)Math.Ceiling(Math.Max(0, (deadline - DateTime.UtcNow).TotalSeconds)) : null;
+
+    private double TimerFraction
+    {
+        get
+        {
+            var remainingMs = view?.Phase.IsPaused == true
+                ? view.Phase.RemainingMs ?? 0
+                : deadlineUtc is { } deadline ? (deadline - DateTime.UtcNow).TotalMilliseconds : 0;
+            return timerTotalMs > 0 ? remainingMs / timerTotalMs : 0;
+        }
+    }
 
     protected override async Task OnInitializedAsync()
     {
@@ -155,6 +188,11 @@
 
     private void Apply(ProjectorState state)
     {
+        // The full length of the timer isn't sent, so the longest time seen for this open question stands in for it.
+        var sameTimer = view?.Phase.Phase == QuestionPhase.Open && state.Phase.Phase == QuestionPhase.Open
+            && view.Phase.Question?.Id == state.Phase.Question?.Id;
+        timerTotalMs = Math.Max(sameTimer ? timerTotalMs : 0, state.Phase.RemainingMs ?? 0);
+
         view = state;
         deadlineUtc = state.Phase.Phase == QuestionPhase.Open && state.Phase.RemainingMs is { } ms ? DateTime.UtcNow.AddMilliseconds(ms) : null;
         StateHasChanged();

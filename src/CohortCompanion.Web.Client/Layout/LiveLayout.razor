@@ -1,5 +1,13 @@
 @inherits LayoutComponentBase
 
+@* The live pages only render once the app has downloaded to the device, which can take a while on classroom
+   Wi-Fi. This shows straight away, and app.css hides it as soon as the page appears next to it. *@
+<div class="live-boot" role="status">
+    <BrandMark />
+    <div class="live-boot-bar"></div>
+    <span>Loading…</span>
+</div>
+
 @Body
 
 <div id="blazor-error-ui" data-nosnippet>

@@ -2,42 +2,72 @@
    put until they choose to return. The server only ever sends slides already shown, so a student can't
    get ahead of the instructor. *@
 
-<div @ontouchstart="OnTouchStart" @ontouchend="OnTouchEnd">
-    @if (Current is { } slide)
-    {
-        <SlideRenderer Layout="slide.Layout" Content="slide.Content" ThemeId="@ThemeId" Reading="true" />
-    }
-    else
-    {
-        <p class="text-center mt-5">Waiting for the first slide.</p>
-    }
-</div>
+@implements IAsyncDisposable
+@inject IJSRuntime JS
 
-<div class="slide-nav">
-    <button type="button" class="btn btn-outline-secondary" disabled="@(PreviousIndex is null)" @onclick="Back">Back</button>
+<section class="pres" aria-label="Presentation">
+    <div class="pres-progress" aria-hidden="true">
+        <div class="pres-progress-live" style="width: @Percent(LiveIndex)"></div>
+        <div class="pres-progress-viewing" style="width: @Percent(ViewingIndex)"></div>
+    </div>
 
-    @if (browsing is not null)
-    {
-        <button type="button" class="btn btn-primary" @onclick="JumpToLive">
-            Jump to live
-            <span class="badge text-bg-light ms-1" aria-label="@BehindBy slides behind">@BehindBy</span>
+    <div class="pres-stage" @ref="stage" data-can-back="@(PreviousIndex is not null ? "true" : "false")" data-can-forward="@(NextIndex is not null ? "true" : "false")">
+        @if (Current is { } slide)
+        {
+            <div class="pres-slide @enterClass" @key="slide.Index">
+                <SlideRenderer Layout="slide.Layout" Content="slide.Content" ThemeId="@ThemeId" Reading="true" />
+            </div>
+        }
+        else
+        {
+            <div class="live-center">
+                <div class="live-pulse"><BrandMark /></div>
+                <p>Waiting for the first slide.</p>
+            </div>
+        }
+    </div>
+
+    <nav class="pres-dock" aria-label="Slides">
+        <button type="button" class="dock-button dock-back" aria-label="Back" disabled="@(PreviousIndex is null)" @onclick="Back">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7" /></svg>
         </button>
-    }
 
-    <button type="button" class="btn btn-outline-secondary" disabled="@(NextIndex is null)" @onclick="Forward">Forward</button>
-</div>
+        <div class="dock-center">
+            @if (browsing is not null)
+            {
+                <button type="button" class="jump-live" @onclick="JumpToLive">
+                    <i class="live-dot"></i>
+                    Jump to live
+                    <span class="jump-badge" aria-label="@BehindBy slides behind" @key="BehindBy">@BehindBy</span>
+                </button>
+            }
+            else if (Current is not null)
+            {
+                <span class="dock-label">Slide <strong>@(ViewingIndex + 1)</strong> of @SlideCount</span>
+            }
+        </div>
+
+        <button type="button" class="dock-button dock-forward" aria-label="Forward" disabled="@(NextIndex is null)" @onclick="Forward">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5l7 7-7 7" /></svg>
+        </button>
+    </nav>
+</section>
 
 @code {
-    private const double SwipeDistance = 60;
-
     [Parameter] public string ThemeId { get; set; } = SlideThemes.DefaultTheme;
 
     [Parameter] public int LiveIndex { get; set; }
 
+    [Parameter] public int SlideCount { get; set; }
+
     [Parameter, EditorRequired] public SortedDictionary<int, SlideView> Slides { get; set; } = default!;
 
+    private ElementReference stage;
+    private DotNetObjectReference<PresentationView>? selfReference;
+    private IJSObjectReference? swipe;
     private int? browsing;
-    private double touchStartX;
+    private int? shownIndex;
+    private string enterClass = "enter-fade";
 
     private SlideView? Current => Slides.GetValueOrDefault(browsing ?? LiveIndex);
 
@@ -48,6 +78,37 @@
     private int? PreviousIndex => Slides.Keys.Where(k => k < ViewingIndex).Cast<int?>().LastOrDefault();
 
     private int? NextIndex => Slides.Keys.Where(k => k > ViewingIndex).Cast<int?>().FirstOrDefault();
+
+    private string Percent(int index) => SlideCount > 0
+        ? $"{Math.Min(100, (index + 1) * 100 / SlideCount)}%"
+        : "0%";
+
+    protected override void OnParametersSet() => NoteDirection();
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            selfReference = DotNetObjectReference.Create(this);
+            swipe = await JS.InvokeAsync<IJSObjectReference>("cc.attachSwipe", stage, selfReference);
+        }
+    }
+
+    /// <summary>Called once a finger has dragged the slide far enough: 1 for the next slide, -1 for the previous one.</summary>
+    [JSInvokable]
+    public void OnSwiped(int direction)
+    {
+        if (direction > 0)
+        {
+            Forward();
+        }
+        else
+        {
+            Back();
+        }
+
+        StateHasChanged();
+    }
 
     private void Back()
     {
@@ -66,22 +127,43 @@
     }
 
     // Reaching the instructor's slide means following again.
-    private void ShowIndex(int index) => browsing = index == LiveIndex ? null : index;
-
-    private void JumpToLive() => browsing = null;
-
-    private void OnTouchStart(TouchEventArgs e) => touchStartX = e.ChangedTouches.FirstOrDefault()?.ClientX ?? 0;
-
-    private void OnTouchEnd(TouchEventArgs e)
+    private void ShowIndex(int index)
     {
-        var distance = (e.ChangedTouches.FirstOrDefault()?.ClientX ?? touchStartX) - touchStartX;
-        if (distance > SwipeDistance)
+        browsing = index == LiveIndex ? null : index;
+        NoteDirection();
+    }
+
+    private void JumpToLive()
+    {
+        browsing = null;
+        NoteDirection();
+    }
+
+    // The next slide comes in from the side the student is moving towards, whoever moved them there.
+    private void NoteDirection()
+    {
+        var index = ViewingIndex;
+        if (index != shownIndex)
         {
-            Back();
+            enterClass = shownIndex is null ? "enter-fade" : index > shownIndex ? "enter-forward" : "enter-back";
+            shownIndex = index;
         }
-        else if (distance < -SwipeDistance)
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        try
         {
-            Forward();
+            if (swipe is not null)
+            {
+                await swipe.InvokeVoidAsync("dispose");
+                await swipe.DisposeAsync();
+            }
         }
+        catch (JSDisconnectedException)
+        {
+        }
+
+        selfReference?.Dispose();
     }
 }
