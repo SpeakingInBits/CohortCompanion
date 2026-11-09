@@ -22,6 +22,15 @@
     There is no email service yet, so password resets go through you: create a reset link and pass it on.
     A reset link works once and expires after 24 hours.
 </p>
+<p class="text-secondary">
+    Admins manage invite codes and instructors, and can teach too. There's always at least one admin, and
+    nobody can change their own access.
+</p>
+
+@if (accessError is not null)
+{
+    <div class="alert alert-warning" role="alert">@accessError</div>
+}
 
 @if (resetLink is not null)
 {
@@ -57,6 +66,7 @@ else
                 {
                     var roles = RolesFor(user.Id);
                     var isInstructor = roles.Contains(Roles.Instructor);
+                    var isAdmin = roles.Contains(Roles.Admin);
                     <tr>
                         <td>@user.DisplayName</td>
                         <td>@user.Email</td>
@@ -85,13 +95,22 @@ else
                             <button type="button" class="btn btn-sm btn-outline-secondary me-1" @onclick="() => CreateResetLinkAsync(user)">Reset link</button>
                             @if (user.Id != currentUserId)
                             {
-                                @if (isInstructor)
+                                @if (isAdmin)
                                 {
-                                    <button type="button" class="btn btn-sm btn-outline-danger" @onclick="() => SetInstructorAsync(user, false)">Remove access</button>
+                                    <button type="button" class="btn btn-sm btn-outline-danger" disabled="@(adminCount <= 1)"
+                                            @onclick="() => ChangeAccessAsync(service => service.RemoveAdminAsync(currentUserId!, user.Id))">Remove admin</button>
+                                }
+                                else if (isInstructor)
+                                {
+                                    <button type="button" class="btn btn-sm btn-outline-primary me-1"
+                                            @onclick="() => ChangeAccessAsync(service => service.MakeAdminAsync(currentUserId!, user.Id))">Make admin</button>
+                                    <button type="button" class="btn btn-sm btn-outline-danger"
+                                            @onclick="() => ChangeAccessAsync(service => service.SetInstructorAsync(currentUserId!, user.Id, false))">Remove access</button>
                                 }
                                 else
                                 {
-                                    <button type="button" class="btn btn-sm btn-outline-success" @onclick="() => SetInstructorAsync(user, true)">Restore access</button>
+                                    <button type="button" class="btn btn-sm btn-outline-success"
+                                            @onclick="() => ChangeAccessAsync(service => service.SetInstructorAsync(currentUserId!, user.Id, true))">Restore access</button>
                                 }
                             }
                         </td>
@@ -107,6 +126,8 @@ else
     private ILookup<string, string> rolesByUser = Enumerable.Empty<string>().ToLookup(_ => "");
     private string? currentUserId;
     private (string Name, string Url)? resetLink;
+    private string? accessError;
+    private int adminCount;
 
     [CascadingParameter]
     private Task<AuthenticationState> AuthenticationState { get; set; } = default!;
@@ -132,6 +153,7 @@ else
             select new { userRole.UserId, role.Name })
             .ToListAsync();
         rolesByUser = roleRows.ToLookup(r => r.UserId, r => r.Name!);
+        adminCount = roleRows.Count(r => r.Name == Roles.Admin);
     }
 
     private List<string> RolesFor(string userId) => rolesByUser[userId].Order().ToList();
@@ -156,29 +178,12 @@ else
         resetLink = (user.DisplayName, url);
     }
 
-    private async Task SetInstructorAsync(ApplicationUser user, bool isInstructor)
+    // Resolved in a short-lived scope, like UserManager above, so its DbContext doesn't live as long as the circuit.
+    private async Task ChangeAccessAsync(Func<InstructorAccessService, Task<AccessChange>> change)
     {
         await using var scope = ScopeFactory.CreateAsyncScope();
-        var userManager = scope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>();
-        var tracked = await userManager.FindByIdAsync(user.Id);
-        if (tracked is null)
-        {
-            return;
-        }
-
-        if (isInstructor)
-        {
-            await userManager.AddToRoleAsync(tracked, Roles.Instructor);
-        }
-        else
-        {
-            await userManager.RemoveFromRoleAsync(tracked, Roles.Instructor);
-        }
-
-        Audit.Record(currentUserId!, isInstructor ? "RestoreInstructor" : "RemoveInstructor", $"user:{user.Id}");
-
-        // Signs the user out of existing sessions at the next revalidation, so the role change takes effect.
-        await userManager.UpdateSecurityStampAsync(tracked);
+        var result = await change(scope.ServiceProvider.GetRequiredService<InstructorAccessService>());
+        accessError = result == AccessChange.Done ? null : InstructorAccessService.Describe(result);
         await LoadAsync();
     }
 
