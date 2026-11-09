@@ -22,7 +22,7 @@
 
 <AuthorizeView Roles="@Roles.Instructor">
     <Authorized>
-        <p class="home-note">Welcome back, @context.User.Identity?.Name.</p>
+        <p class="home-note">Welcome back, @context.User.DisplayName().</p>
         <div class="home-tiles">
             <a class="home-tile" href="quizzes"><strong>Quizzes</strong><span>Write questions and run them live</span></a>
             <a class="home-tile" href="presentations"><strong>Presentations</strong><span>Build slides your class can follow</span></a>

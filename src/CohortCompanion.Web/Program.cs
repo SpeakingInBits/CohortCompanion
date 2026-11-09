@@ -8,6 +8,7 @@ using CohortCompanion.Shared.Live;
 using CohortCompanion.Web.Auth;
 using CohortCompanion.Web.Components;
 using CohortCompanion.Web.Components.Account;
+using CohortCompanion.Web.Components.Shared;
 using CohortCompanion.Web.Content;
 using CohortCompanion.Web.Data;
 using CohortCompanion.Web.Images;
@@ -49,6 +50,7 @@ builder.Services.AddIdentityCore<ApplicationUser>(options =>
     })
     .AddRoles<IdentityRole>()
     .AddEntityFrameworkStores<ApplicationDbContext>()
+    .AddClaimsPrincipalFactory<DisplayNameClaimsFactory>()
     .AddSignInManager()
     .AddDefaultTokenProviders();
 
@@ -58,6 +60,7 @@ builder.Services.Configure<AuthOptions>(builder.Configuration.GetSection(AuthOpt
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddScoped<InviteCodeService>();
 builder.Services.AddScoped<InstructorAccessService>();
+builder.Services.AddScoped<BrowserTimeZone>();
 
 builder.Services.AddRadzenComponents();
 builder.Services.AddSingleton<ContentSanitizer>();

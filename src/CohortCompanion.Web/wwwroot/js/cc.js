@@ -40,6 +40,11 @@ window.cc = {
         }
     },
 
+    // The browser's IANA time zone, such as America/Chicago, so the server can show times on the viewer's clock.
+    timeZone() {
+        return Intl.DateTimeFormat().resolvedOptions().timeZone ?? null;
+    },
+
     // Makes the browser ask before closing or reloading the tab, while an editor has unsaved changes.
     warnBeforeLeaving(on) {
         window.removeEventListener("beforeunload", preventUnload);

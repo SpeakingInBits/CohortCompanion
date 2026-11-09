@@ -80,7 +80,7 @@ else
                                 <span class="badge text-bg-light">No access</span>
                             }
                         </td>
-                        <td class="text-nowrap">@user.CreatedAtUtc.ToLocalTime().ToString("MMM d, yyyy")</td>
+                        <td class="text-nowrap"><LocalTime Utc="user.CreatedAtUtc" Format="MMM d, yyyy" /></td>
                         <td>
                             @if (user.InviteCode is not null)
                             {

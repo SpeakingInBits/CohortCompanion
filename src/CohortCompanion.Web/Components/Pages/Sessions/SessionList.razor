@@ -44,27 +44,23 @@ else
 <h2 class="h4 mt-4">Past sessions</h2>
 @if (past.Count == 0)
 {
-    <p>Sessions you've finished appear here, with totals for each question.</p>
+    <p>Quizzes you've run appear here once they end, with totals for each question.</p>
 }
 else
 {
     <div class="table-responsive">
         <table class="table align-middle">
             <thead>
-                <tr><th>Title</th><th>Type</th><th>Ended</th><th></th></tr>
+                <tr><th>Quiz</th><th>Ended</th><th></th></tr>
             </thead>
             <tbody>
                 @foreach (var session in past)
                 {
                     <tr>
                         <td>@session.Title</td>
-                        <td>@session.Kind</td>
-                        <td>@session.EndedAtUtc.ToString("yyyy-MM-dd HH:mm") UTC</td>
+                        <td><LocalTime Utc="session.EndedAtUtc" /></td>
                         <td class="text-end">
-                            @if (session.Kind == SessionKind.Quiz)
-                            {
-                                <a class="btn btn-sm btn-outline-primary" href="sessions/@session.Id/summary">View totals</a>
-                            }
+                            <a class="btn btn-sm btn-outline-primary" href="sessions/@session.Id/summary">View totals</a>
                         </td>
                     </tr>
                 }

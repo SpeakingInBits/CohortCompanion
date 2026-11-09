@@ -80,7 +80,7 @@ else
                         {
                             <td>@quiz.OwnerName</td>
                         }
-                        <td>@quiz.UpdatedAtUtc.ToString("yyyy-MM-dd HH:mm") UTC</td>
+                        <td><LocalTime Utc="quiz.UpdatedAtUtc" /></td>
                         <td class="text-end text-nowrap">
                             @if (!showAll)
                             {

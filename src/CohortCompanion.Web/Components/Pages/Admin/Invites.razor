@@ -98,7 +98,7 @@ else
                         <td>@invite.Note</td>
                         <td>@invite.LockedToEmail</td>
                         <td>@invite.UseCount / @invite.MaxUses</td>
-                        <td class="text-nowrap">@invite.ExpiresAtUtc.ToLocalTime().ToString("MMM d, yyyy")</td>
+                        <td class="text-nowrap"><LocalTime Utc="invite.ExpiresAtUtc" Format="MMM d, yyyy" /></td>
                         <td><span class="badge @StatusBadge(status)">@status</span></td>
                         <td>@string.Join(", ", invite.RedeemedBy.Select(u => u.DisplayName))</td>
                         <td class="text-nowrap">

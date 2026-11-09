@@ -9,7 +9,7 @@
         <div class="top-row px-4">
             <AuthorizeView>
                 <Authorized>
-                    <span class="text-secondary">Signed in as @context.User.Identity?.Name</span>
+                    <span class="text-secondary" title="@context.User.Identity?.Name">Signed in as @context.User.DisplayName()</span>
                 </Authorized>
             </AuthorizeView>
         </div>
