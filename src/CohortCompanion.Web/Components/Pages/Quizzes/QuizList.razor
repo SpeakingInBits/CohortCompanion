@@ -67,7 +67,13 @@ else
                 @foreach (var quiz in quizzes)
                 {
                     <tr>
-                        <td>@quiz.Title</td>
+                        <td>
+                            @quiz.Title
+                            @if (quiz.IsReady == false)
+                            {
+                                <a class="badge text-bg-warning ms-1 text-decoration-none" href="quizzes/@quiz.Id/edit" title="Open it to see what to fix before it can run live">Needs fixing</a>
+                            }
+                        </td>
                         <td>@(quiz.Mode == CohortCompanion.Shared.QuizMode.Timed ? "Timed" : "Instructor-paced")</td>
                         <td>@quiz.QuestionCount</td>
                         @if (showAll)
@@ -78,7 +84,7 @@ else
                         <td class="text-end text-nowrap">
                             @if (!showAll)
                             {
-                                <button type="button" class="btn btn-sm btn-primary" disabled="@(quiz.QuestionCount == 0)" @onclick="() => RunAsync(quiz.Id)">Run live</button>
+                                <button type="button" class="btn btn-sm btn-primary" disabled="@(quiz.IsReady == false)" @onclick="() => RunAsync(quiz.Id)">Run live</button>
                                 <a class="btn btn-sm btn-outline-primary" href="quizzes/@quiz.Id/edit">Edit</a>
                             }
                             @if (pendingDelete == quiz.Id)

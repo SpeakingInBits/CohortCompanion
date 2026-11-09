@@ -5,7 +5,8 @@ using Microsoft.EntityFrameworkCore;
 
 namespace CohortCompanion.Web.Quizzes;
 
-public sealed record QuizListItem(int Id, string Title, QuizMode Mode, int QuestionCount, DateTime UpdatedAtUtc, string OwnerName);
+/// <summary>A row in a quiz list. <c>IsReady</c> says whether it can run live, and is only worked out for the owner's own list.</summary>
+public sealed record QuizListItem(int Id, string Title, QuizMode Mode, int QuestionCount, DateTime UpdatedAtUtc, string OwnerName, bool? IsReady = null);
 
 /// <summary>Quiz storage. Every read and write is limited to the owner, except the explicit admin paths.</summary>
 public sealed class QuizService(
@@ -19,12 +20,29 @@ public sealed class QuizService(
     public async Task<List<QuizListItem>> ListAsync(string? ownerId, CancellationToken cancellationToken = default)
     {
         await using var db = await dbFactory.CreateDbContextAsync(cancellationToken);
-        var rows = await db.Quizzes
+        if (ownerId is null)
+        {
+            var everyone = await db.Quizzes
+                .AsNoTracking()
+                .Select(q => new QuizListItem(q.Id, q.Title, q.Mode, q.Questions.Count, q.UpdatedAtUtc, q.Owner!.DisplayName, null))
+                .ToListAsync(cancellationToken);
+            return everyone.OrderByDescending(q => q.UpdatedAtUtc).ToList();
+        }
+
+        // One instructor's quizzes are few enough to load whole, so the list can say which ones need fixing
+        // before they'll run, rather than finding out from the Run live button.
+        var quizzes = await db.Quizzes
             .AsNoTracking()
-            .Where(q => ownerId == null || q.OwnerId == ownerId)
-            .Select(q => new QuizListItem(q.Id, q.Title, q.Mode, q.Questions.Count, q.UpdatedAtUtc, q.Owner!.DisplayName))
+            .AsSplitQuery()
+            .Include(q => q.Owner)
+            .Include(q => q.Questions).ThenInclude(q => q.Options)
+            .Include(q => q.Questions).ThenInclude(q => q.BlankAnswers)
+            .Where(q => q.OwnerId == ownerId)
             .ToListAsync(cancellationToken);
-        return rows.OrderByDescending(q => q.UpdatedAtUtc).ToList();
+        return quizzes
+            .OrderByDescending(q => q.UpdatedAtUtc)
+            .Select(q => new QuizListItem(q.Id, q.Title, q.Mode, q.Questions.Count, q.UpdatedAtUtc, q.Owner!.DisplayName, QuizRules.Validate(q).Count == 0))
+            .ToList();
     }
 
     public async Task<Quiz?> GetAsync(int id, string ownerId, CancellationToken cancellationToken = default)
