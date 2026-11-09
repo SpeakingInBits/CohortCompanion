@@ -103,6 +103,8 @@ docs/
 ### Roles
 - `Admin`: manages instructors and invite codes, sees school-wide usage, can delete any content.
   The first admin is created at startup from configuration (`Auth:BootstrapAdminEmail`).
+  Every admin is also an instructor. Admins can make other instructors admins; there's always at least one
+  admin, and nobody can change their own access.
 - `Instructor`: creates and runs their own presentations and quizzes.
 - Instructors can only see their own content and sessions. Sharing or co-teaching is a later feature.
 
