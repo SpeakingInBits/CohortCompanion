@@ -45,6 +45,22 @@ public sealed class QuizServiceTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task List_SaysWhichQuizzesCanRunLive()
+    {
+        var draft = await service.CreateAsync(ownerId, "Draft");
+        var ready = await service.CreateAsync(ownerId, "Ready");
+        ready.Questions.Add(new Question { Type = QuestionType.WordCloud, Prompt = "<p>One word</p>", MaxEntries = 1 });
+        await service.SaveAsync(ready, ownerId);
+
+        var list = await service.ListAsync(ownerId);
+
+        Assert.False(list.Single(q => q.Id == draft.Id).IsReady);
+        Assert.True(list.Single(q => q.Id == ready.Id).IsReady);
+        Assert.Equal(1, list.Single(q => q.Id == ready.Id).QuestionCount);
+        Assert.All(await service.ListAsync(null), q => Assert.Null(q.IsReady));
+    }
+
+    [Fact]
     public async Task Save_RejectsAnotherInstructorsQuiz()
     {
         var quiz = await service.CreateAsync(ownerId, "Mine");

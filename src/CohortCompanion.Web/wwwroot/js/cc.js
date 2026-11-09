@@ -40,6 +40,14 @@ window.cc = {
         }
     },
 
+    // Makes the browser ask before closing or reloading the tab, while an editor has unsaved changes.
+    warnBeforeLeaving(on) {
+        window.removeEventListener("beforeunload", preventUnload);
+        if (on) {
+            window.addEventListener("beforeunload", preventUnload);
+        }
+    },
+
     // Lets the keyboard or a presentation clicker drive the host page from anywhere on it, not only once some part
     // of the page has focus. Keys typed into a field are left alone, and so is Space on a focused button, which
     // already presses that button. Returns a handle whose dispose() stops listening.
@@ -182,6 +190,12 @@ window.cc = {
 
 let wakeLock = null;
 let wakeLockWanted = false;
+
+// Browsers show their own "Leave site?" wording; asking at all is all a page can do.
+function preventUnload(event) {
+    event.preventDefault();
+    event.returnValue = "";
+}
 
 async function requestWakeLock() {
     try {

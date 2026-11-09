@@ -5,10 +5,13 @@
 @using System.Security.Claims
 @using CohortCompanion.Shared
 @using CohortCompanion.Web.Data
+@using CohortCompanion.Web.Live
 @using CohortCompanion.Web.Quizzes
 
 @inject QuizService Quizzes
-@implements IDisposable
+@inject LiveSessionManager Manager
+@inject IJSRuntime JS
+@implements IAsyncDisposable
 @inject NavigationManager NavigationManager
 
 <PageTitle>Edit quiz</PageTitle>
@@ -29,6 +32,9 @@ else
         <span class="text-secondary" role="status">@status</span>
         <a class="btn btn-outline-secondary" href="quizzes">Back</a>
         <button type="button" class="btn btn-primary" disabled="@saving" @onclick="SaveAsync">Save</button>
+        <button type="button" class="btn btn-outline-primary" disabled="@(saving || problems.Count > 0)"
+                title="@(problems.Count > 0 ? "Fix the problems listed below first" : dirty ? "Saves your changes, then starts a live session" : "Starts a live session")"
+                @onclick="RunLiveAsync">Run live</button>
     </div>
 
     <div class="card mb-4">
@@ -49,7 +55,12 @@ else
                 <div class="col-md-3">
                     <label for="default-limit" class="form-label">Default time limit (seconds)</label>
                     <input id="default-limit" type="number" class="form-control" min="@QuizRules.MinTimeLimitSeconds" max="@QuizRules.MaxTimeLimitSeconds"
-                           @bind="quiz.DefaultTimeLimitSeconds" @bind:after="MarkDirty" />
+                           aria-describedby="default-limit-help" @bind="quiz.DefaultTimeLimitSeconds" @bind:after="MarkDirty" />
+                    <div id="default-limit-help" class="form-text">
+                        @(quiz.Mode == QuizMode.Timed
+                            ? "Each question gets this long, unless it sets its own."
+                            : "Optional. If set, each question closes by itself when time runs out, and you still move on.")
+                    </div>
                 </div>
                 @if (quiz.Mode == QuizMode.Timed)
                 {
@@ -126,6 +137,7 @@ else
     private IReadOnlyList<string> problems = [];
     private IDisposable? navigationGuard;
     private bool dirty;
+    private bool leaveWarningOn;
 
     protected override async Task OnInitializedAsync()
     {
@@ -133,8 +145,16 @@ else
         await LoadAsync();
     }
 
-    protected override void OnAfterRender(bool firstRender)
+    protected override async Task OnAfterRenderAsync(bool firstRender)
     {
+        // The browser asks before closing or reloading the tab with unsaved changes. The handler below covers
+        // moving to another page of the app.
+        if (dirty != leaveWarningOn)
+        {
+            leaveWarningOn = dirty;
+            await JS.InvokeVoidAsync("cc.warnBeforeLeaving", dirty);
+        }
+
         if (firstRender)
         {
             navigationGuard = NavigationManager.RegisterLocationChangingHandler(context =>
@@ -204,7 +224,9 @@ else
         }
     }
 
-    private async Task SaveAsync()
+    private async Task SaveAsync() => await TrySaveAsync();
+
+    private async Task<bool> TrySaveAsync()
     {
         saving = true;
         try
@@ -214,11 +236,11 @@ else
                 await LoadAsync();
                 dirty = false;
                 status = "All changes saved";
+                return true;
             }
-            else
-            {
-                status = "This quiz no longer exists.";
-            }
+
+            status = "This quiz no longer exists.";
+            return false;
         }
         finally
         {
@@ -226,5 +248,36 @@ else
         }
     }
 
-    public void Dispose() => navigationGuard?.Dispose();
+    /// <summary>Runs what's on screen: unsaved changes are saved first, since that's what the instructor means to run.</summary>
+    private async Task RunLiveAsync()
+    {
+        if (dirty && !await TrySaveAsync())
+        {
+            return;
+        }
+
+        var (sessionId, resumed) = await Manager.StartOrResumeQuizAsync(quiz!, ownerId);
+        if (sessionId is not { } started)
+        {
+            status = "This quiz isn't ready to run yet.";
+            return;
+        }
+
+        NavigationManager.NavigateTo(LiveSessionManager.HostPath(started, resumed));
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        navigationGuard?.Dispose();
+        if (leaveWarningOn)
+        {
+            try
+            {
+                await JS.InvokeVoidAsync("cc.warnBeforeLeaving", false);
+            }
+            catch (JSDisconnectedException)
+            {
+            }
+        }
+    }
 }
