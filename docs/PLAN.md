@@ -110,6 +110,11 @@ docs/
 - No account. On join, the server issues a random **participant token**, stored in `localStorage` and
   sent on reconnect, so a student who refreshes or whose phone sleeps rejoins as the same participant.
 - The token only works for that session and expires when the session ends.
+- Only that session's own link (`/j/123456`) rejoins by itself; after joining, the address bar shows it so a
+  reload comes back. Plain `/join` shows the form and offers to go back, so a session that was never ended
+  can't trap a student who's trying to join the next class.
+- A student can leave a session. It works like the instructor removing them: their answers stop counting and
+  the token stops working. Joining another session leaves the earlier one.
 
 ---
 
@@ -202,7 +207,7 @@ Notes:
 - **Timed:** every question has its own time limit (the quiz default, overridable per question).
   When the timer runs out the question closes, results and the answer show for a few seconds
   (configurable, default 5), and the quiz moves to the next question automatically. The instructor
-  can pause, extend the timer, or skip.
+  can pause, extend the timer, or skip. A 3-second countdown runs before the first question opens.
 
 ### Question phases
 `Waiting → Open → Closed → ShowingResults → AnswerRevealed → (next question)`
@@ -226,7 +231,8 @@ Notes:
   screen and in a corner of the projector view.
 - **Lobby:** students enter a nickname and see "Waiting for the instructor to start". The projector
   shows the nicknames as they join. The instructor can remove or rename a participant.
-- **Nicknames:** 2–20 characters, profanity filtered, unique within the session.
+- **Nicknames:** 2–20 characters, profanity filtered, unique within the session. Students can change their
+  own while in the lobby; after that, only the instructor can.
 
 ### SignalR hub contract (sketch)
 
@@ -234,6 +240,8 @@ Student to server:
 - `Join(joinCode, nickname) → { participantToken, sessionState }`
 - `Rejoin(participantToken) → sessionState`
 - `SubmitAnswer(questionId, payload) → { accepted, reason }`
+- `ChangeNickname(nickname) → error` (lobby only)
+- `Leave(participantToken)`
 
 Projector to server (requires the `Instructor` role and session ownership):
 - `WatchProjector(sessionId) → projectorState`

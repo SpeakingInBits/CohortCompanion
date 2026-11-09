@@ -40,7 +40,9 @@ public sealed partial class LiveSessionManager
             }
             else if (IsTimed(runtime))
             {
-                await OpenCurrentQuestionAsync(runtime);
+                // A moment for everyone to look up before the first timed question opens.
+                runtime.DeadlineUtc = UtcNow + GetReadyTime;
+                await AnnouncePhaseAsync(runtime);
             }
             else
             {
@@ -177,7 +179,7 @@ public sealed partial class LiveSessionManager
             return true;
         });
 
-    /// <summary>In a timed quiz: ends the question now, or stops showing its results and moves on.</summary>
+    /// <summary>In a timed quiz: skips the countdown, ends the question now, or stops showing its results and moves on.</summary>
     public Task<bool> SkipAsync(Guid sessionId, string hostId) =>
         CommandAsync(sessionId, hostId, async runtime =>
         {
@@ -188,6 +190,9 @@ public sealed partial class LiveSessionManager
 
             switch (runtime.Phase)
             {
+                case QuestionPhase.Waiting:
+                    await OpenCurrentQuestionAsync(runtime);
+                    return true;
                 case QuestionPhase.Open:
                     await RevealBrieflyAsync(runtime);
                     return true;
@@ -353,6 +358,12 @@ public sealed partial class LiveSessionManager
                 await CloseCurrentQuestionAsync(runtime);
             }
 
+            return true;
+        }
+
+        if (runtime.Phase == QuestionPhase.Waiting && IsTimed(runtime) && now >= deadline)
+        {
+            await OpenCurrentQuestionAsync(runtime);
             return true;
         }
 

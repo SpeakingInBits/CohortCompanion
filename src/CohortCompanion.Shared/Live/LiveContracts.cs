@@ -31,6 +31,9 @@ public enum JoinError
     NicknameInvalid = 2,
     NicknameNotAllowed = 3,
     NicknameTaken = 4,
+
+    /// <summary>Students can only change their own nickname in the lobby.</summary>
+    SessionStarted = 5,
 }
 
 /// <summary>A student's answer. Only the fields for the question's type are set.</summary>

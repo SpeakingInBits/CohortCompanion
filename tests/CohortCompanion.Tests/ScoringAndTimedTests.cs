@@ -128,6 +128,52 @@ public sealed class TimedQuizTests : LiveSessionTestBase
 
     private async Task<QuestionPhase> PhaseAsync(Guid id) => (await Manager.GetHostViewAsync(id, HostId))!.Phase;
 
+    /// <summary>Starts a timed quiz and lets its countdown run out, so the first question is open.</summary>
+    private async Task<(Guid Id, string Code)> RunningTimedAsync(Quiz quiz)
+    {
+        var session = await RunningSessionAsync(quiz);
+        await GetReadyAsync();
+        return session;
+    }
+
+    private async Task GetReadyAsync()
+    {
+        Time.Advance(LiveSessionManager.GetReadyTime);
+        await Manager.TickAsync();
+    }
+
+    [Fact]
+    public async Task Timed_CountsDownBeforeTheFirstQuestion()
+    {
+        var (id, _) = await RunningSessionAsync(Timed(MultipleChoice()));
+
+        var view = (await Manager.GetHostViewAsync(id, HostId))!;
+        Assert.Equal(QuestionPhase.Waiting, view.Phase);
+        Assert.Equal((int)LiveSessionManager.GetReadyTime.TotalMilliseconds, view.RemainingMs);
+        Assert.Equal(QuestionPhase.Waiting, Broadcaster.LastPhase.Phase);
+        Assert.NotNull(Broadcaster.LastPhase.RemainingMs);
+        Assert.Null(Broadcaster.LastPhase.Question);
+
+        Time.Advance(LiveSessionManager.GetReadyTime - TimeSpan.FromMilliseconds(100));
+        await Manager.TickAsync();
+        Assert.Equal(QuestionPhase.Waiting, await PhaseAsync(id));
+
+        Time.Advance(TimeSpan.FromMilliseconds(100));
+        await Manager.TickAsync();
+        Assert.Equal(QuestionPhase.Open, await PhaseAsync(id));
+        Assert.Equal(10_000, (await Manager.GetHostViewAsync(id, HostId))!.RemainingMs);
+    }
+
+    [Fact]
+    public async Task Skip_DuringTheCountdown_OpensTheQuestion()
+    {
+        var (id, _) = await RunningSessionAsync(Timed(MultipleChoice()));
+
+        Assert.True(await Manager.SkipAsync(id, HostId));
+
+        Assert.Equal(QuestionPhase.Open, await PhaseAsync(id));
+    }
+
     private async Task AnswerQuestionAsync(Guid id, params (string Connection, AnswerPayload Answer)[] answers)
     {
         await Manager.OpenQuestionAsync(id, HostId);
@@ -143,7 +189,7 @@ public sealed class TimedQuizTests : LiveSessionTestBase
     [Fact]
     public async Task Timed_RunsThroughEveryQuestionByItself()
     {
-        var (id, _) = await RunningSessionAsync(Timed(MultipleChoice(0), MultipleChoice(1)));
+        var (id, _) = await RunningTimedAsync(Timed(MultipleChoice(0), MultipleChoice(1)));
         Assert.Equal(QuestionPhase.Open, await PhaseAsync(id));
 
         Time.Advance(TimeSpan.FromSeconds(11));
@@ -170,7 +216,7 @@ public sealed class TimedQuizTests : LiveSessionTestBase
     [Fact]
     public async Task Paused_TimerDoesNotExpire_AndResumesWithTheTimeLeft()
     {
-        var (id, _) = await RunningSessionAsync(Timed(MultipleChoice()));
+        var (id, _) = await RunningTimedAsync(Timed(MultipleChoice()));
         Time.Advance(TimeSpan.FromSeconds(4));
 
         Assert.True(await Manager.PauseTimerAsync(id, HostId));
@@ -195,6 +241,7 @@ public sealed class TimedQuizTests : LiveSessionTestBase
         var (id, code) = await StartSessionAsync(quiz);
         await JoinAsync(code, "Sam");
         await Manager.StartAsync(id, HostId);
+        await GetReadyAsync();
 
         await Manager.PauseTimerAsync(id, HostId);
         Time.Advance(TimeSpan.FromMinutes(1));
@@ -209,7 +256,7 @@ public sealed class TimedQuizTests : LiveSessionTestBase
     [Fact]
     public async Task Extend_AddsTime()
     {
-        var (id, _) = await RunningSessionAsync(Timed(MultipleChoice()));
+        var (id, _) = await RunningTimedAsync(Timed(MultipleChoice()));
 
         Assert.True(await Manager.ExtendTimerAsync(id, HostId, 20));
 
@@ -219,7 +266,7 @@ public sealed class TimedQuizTests : LiveSessionTestBase
     [Fact]
     public async Task Skip_EndsTheQuestionThenMovesOn()
     {
-        var (id, _) = await RunningSessionAsync(Timed(MultipleChoice(0), MultipleChoice(1)));
+        var (id, _) = await RunningTimedAsync(Timed(MultipleChoice(0), MultipleChoice(1)));
 
         Assert.True(await Manager.SkipAsync(id, HostId));
         Assert.Equal(QuestionPhase.AnswerRevealed, await PhaseAsync(id));

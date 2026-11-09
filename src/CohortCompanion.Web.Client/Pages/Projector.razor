@@ -77,6 +77,10 @@
                         <span class="live-pill live-timer @(seconds <= UrgentSeconds && !view.Phase.IsPaused ? "is-urgent" : "")" role="timer">@(view.Phase.IsPaused ? "Paused" : $"{seconds}s")</span>
                     }
                 }
+                else if (view.Phase.Phase == QuestionPhase.Waiting && RemainingSeconds is { } startsIn)
+                {
+                    <span class="live-pill live-timer" role="timer">Starts in @Math.Max(1, startsIn)s</span>
+                }
                 <span>Join: <strong>@view.JoinCode</strong></span>
             </span>
         </div>
@@ -194,7 +198,7 @@
         timerTotalMs = Math.Max(sameTimer ? timerTotalMs : 0, state.Phase.RemainingMs ?? 0);
 
         view = state;
-        deadlineUtc = state.Phase.Phase == QuestionPhase.Open && state.Phase.RemainingMs is { } ms ? DateTime.UtcNow.AddMilliseconds(ms) : null;
+        deadlineUtc = state.Phase.Phase is QuestionPhase.Open or QuestionPhase.Waiting && state.Phase.RemainingMs is { } ms ? DateTime.UtcNow.AddMilliseconds(ms) : null;
         StateHasChanged();
     }
 

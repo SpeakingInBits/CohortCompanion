@@ -59,6 +59,9 @@ public sealed partial class LiveSessionManager(
     /// <summary>A session with no activity for this long is ended, so per-student data can't linger.</summary>
     public static readonly TimeSpan AbandonedAfter = TimeSpan.FromHours(12);
 
+    /// <summary>The countdown before a timed quiz's first question opens.</summary>
+    public static readonly TimeSpan GetReadyTime = TimeSpan.FromSeconds(3);
+
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
 
     private readonly ConcurrentDictionary<Guid, LiveRuntime> sessions = new();
@@ -175,14 +178,9 @@ public sealed partial class LiveSessionManager(
     public async Task<JoinResult> JoinAsync(string joinCode, string nickname, string connectionId)
     {
         var name = (nickname ?? "").Trim();
-        if (name.Length is < AnswerLimits.MinNickname or > AnswerLimits.MaxNickname)
+        if (CheckNickname(name) is not JoinError.None and var problem)
         {
-            return new JoinResult(JoinError.NicknameInvalid);
-        }
-
-        if (TextRules.IsProfane(name))
-        {
-            return new JoinResult(JoinError.NicknameNotAllowed);
+            return new JoinResult(problem);
         }
 
         if (!sessionByCode.TryGetValue((joinCode ?? "").Trim(), out var sessionId) || !sessions.TryGetValue(sessionId, out var runtime))
@@ -198,7 +196,7 @@ public sealed partial class LiveSessionManager(
                 return new JoinResult(JoinError.SessionNotFound);
             }
 
-            if (runtime.ActiveParticipants.Any(p => string.Equals(p.Nickname, name, StringComparison.OrdinalIgnoreCase)))
+            if (NicknameTaken(runtime, Guid.Empty, name))
             {
                 return new JoinResult(JoinError.NicknameTaken);
             }
@@ -252,6 +250,90 @@ public sealed partial class LiveSessionManager(
 
             await AttachAsync(runtime, participant, connectionId);
             return BuildStudentState(runtime, participant);
+        }
+        finally
+        {
+            runtime.Gate.Release();
+        }
+    }
+
+    private static JoinError CheckNickname(string name) =>
+        name.Length is < AnswerLimits.MinNickname or > AnswerLimits.MaxNickname ? JoinError.NicknameInvalid
+        : TextRules.IsProfane(name) ? JoinError.NicknameNotAllowed
+        : JoinError.None;
+
+    private static bool NicknameTaken(LiveRuntime runtime, Guid participantId, string name) =>
+        runtime.ActiveParticipants.Any(p => p.Id != participantId && string.Equals(p.Nickname, name, StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>Lets a student fix their own nickname, but only in the lobby: once it starts, only the instructor can.</summary>
+    public async Task<JoinError> ChangeNicknameAsync(string connectionId, string nickname)
+    {
+        if (!connections.TryGetValue(connectionId, out var connection)
+            || connection.Participant is not { } participantId
+            || !sessions.TryGetValue(connection.Session, out var runtime))
+        {
+            return JoinError.SessionNotFound;
+        }
+
+        var name = (nickname ?? "").Trim();
+        if (CheckNickname(name) is not JoinError.None and var problem)
+        {
+            return problem;
+        }
+
+        await runtime.Gate.WaitAsync();
+        try
+        {
+            if (runtime.Status == SessionStatus.Ended
+                || !runtime.Participants.TryGetValue(participantId, out var participant)
+                || participant.IsRemoved)
+            {
+                return JoinError.SessionNotFound;
+            }
+
+            if (runtime.Status != SessionStatus.Lobby)
+            {
+                return JoinError.SessionStarted;
+            }
+
+            if (NicknameTaken(runtime, participantId, name))
+            {
+                return JoinError.NicknameTaken;
+            }
+
+            await SetNicknameAsync(runtime, participant, name);
+            Touch(runtime);
+            return JoinError.None;
+        }
+        finally
+        {
+            runtime.Gate.Release();
+        }
+    }
+
+    /// <summary>
+    /// A student leaves for good, for example to join another class. It works like the instructor removing them:
+    /// their answers stop counting and the token stops working.
+    /// </summary>
+    public async Task LeaveAsync(string token)
+    {
+        var hash = HashToken(token ?? "");
+        if (!sessionByTokenHash.TryGetValue(hash, out var sessionId) || !sessions.TryGetValue(sessionId, out var runtime))
+        {
+            return;
+        }
+
+        await runtime.Gate.WaitAsync();
+        try
+        {
+            var participant = runtime.Participants.Values.FirstOrDefault(p => p.TokenHash == hash);
+            if (participant is null || participant.IsRemoved || runtime.Status == SessionStatus.Ended)
+            {
+                return;
+            }
+
+            await DetachParticipantAsync(runtime, participant, notify: false);
+            Touch(runtime);
         }
         finally
         {
@@ -459,24 +541,34 @@ public sealed partial class LiveSessionManager(
                 return false;
             }
 
-            participant.IsRemoved = true;
-            foreach (var connectionId in participant.Connections.ToList())
-            {
-                await broadcaster.ToConnectionAsync(connectionId, HubEvents.ParticipantRemoved, null);
-                await broadcaster.RemoveFromStudentsAsync(runtime.Id, connectionId);
-                connections.TryRemove(connectionId, out _);
-            }
-
-            participant.Connections.Clear();
-            sessionByTokenHash.TryRemove(participant.TokenHash, out _);
-
-            await using var db = await dbFactory.CreateDbContextAsync();
-            await db.Participants.Where(p => p.Id == participantId)
-                .ExecuteUpdateAsync(s => s.SetProperty(p => p.IsRemoved, true));
-
-            await PushViewsAsync(runtime);
+            await DetachParticipantAsync(runtime, participant, notify: true);
             return true;
         });
+
+    /// <summary>Takes a student out of the session, after which their answers stop counting.</summary>
+    private async Task DetachParticipantAsync(LiveRuntime runtime, LiveParticipant participant, bool notify)
+    {
+        participant.IsRemoved = true;
+        foreach (var connectionId in participant.Connections.ToList())
+        {
+            if (notify)
+            {
+                await broadcaster.ToConnectionAsync(connectionId, HubEvents.ParticipantRemoved, null);
+            }
+
+            await broadcaster.RemoveFromStudentsAsync(runtime.Id, connectionId);
+            connections.TryRemove(connectionId, out _);
+        }
+
+        participant.Connections.Clear();
+        sessionByTokenHash.TryRemove(participant.TokenHash, out _);
+
+        await using var db = await dbFactory.CreateDbContextAsync();
+        await db.Participants.Where(p => p.Id == participant.Id)
+            .ExecuteUpdateAsync(s => s.SetProperty(p => p.IsRemoved, true));
+
+        await PushViewsAsync(runtime);
+    }
 
     public Task<bool> RenameParticipantAsync(Guid sessionId, string hostId, Guid participantId, string nickname) =>
         CommandAsync(sessionId, hostId, async runtime =>
@@ -485,24 +577,29 @@ public sealed partial class LiveSessionManager(
             if (name.Length is < AnswerLimits.MinNickname or > AnswerLimits.MaxNickname
                 || !runtime.Participants.TryGetValue(participantId, out var participant)
                 || participant.IsRemoved
-                || runtime.ActiveParticipants.Any(p => p.Id != participantId && string.Equals(p.Nickname, name, StringComparison.OrdinalIgnoreCase)))
+                || NicknameTaken(runtime, participantId, name))
             {
                 return false;
             }
 
-            participant.Nickname = name;
-            foreach (var connectionId in participant.Connections)
-            {
-                await broadcaster.ToConnectionAsync(connectionId, HubEvents.NicknameChanged, name);
-            }
-
-            await using var db = await dbFactory.CreateDbContextAsync();
-            await db.Participants.Where(p => p.Id == participantId)
-                .ExecuteUpdateAsync(s => s.SetProperty(p => p.Nickname, name));
-
-            await PushViewsAsync(runtime);
+            await SetNicknameAsync(runtime, participant, name);
             return true;
         });
+
+    private async Task SetNicknameAsync(LiveRuntime runtime, LiveParticipant participant, string name)
+    {
+        participant.Nickname = name;
+        foreach (var connectionId in participant.Connections)
+        {
+            await broadcaster.ToConnectionAsync(connectionId, HubEvents.NicknameChanged, name);
+        }
+
+        await using var db = await dbFactory.CreateDbContextAsync();
+        await db.Participants.Where(p => p.Id == participant.Id)
+            .ExecuteUpdateAsync(s => s.SetProperty(p => p.Nickname, name));
+
+        await PushViewsAsync(runtime);
+    }
 
     /// <summary>Ends the session: saves totals, deletes per-student data, and releases the join code, all at once.</summary>
     public Task<bool> EndAsync(Guid sessionId, string hostId) =>

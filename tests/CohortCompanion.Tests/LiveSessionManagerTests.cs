@@ -87,6 +87,87 @@ public sealed class LiveSessionManagerTests : LiveSessionTestBase
         Assert.Null(await Manager.RejoinAsync("not-a-token", "c1"));
 
     [Fact]
+    public async Task Leave_TakesTheStudentOut_AndTheirTokenStopsWorking()
+    {
+        var (id, code) = await RunningSessionAsync(SampleQuiz());
+        var token = await JoinAsync(code, "Sam");
+        await JoinAsync(code, "Alex");
+        await Manager.OpenQuestionAsync(id, HostId);
+        await Manager.SubmitAnswerAsync("Sam", 1, Correct);
+
+        await Manager.LeaveAsync(token);
+
+        var view = (await Manager.GetHostViewAsync(id, HostId))!;
+        Assert.Equal(["Alex"], view.Participants.Select(p => p.Nickname));
+        Assert.Equal(0, view.ResponseCount);
+        Assert.Null(await Manager.RejoinAsync(token, "again"));
+        Assert.DoesNotContain(Broadcaster.ToConnections, m => m.Method == HubEvents.ParticipantRemoved);
+        Assert.Equal("not-joined", (await Manager.SubmitAnswerAsync("Sam", 1, Correct)).Reason);
+    }
+
+    [Fact]
+    public async Task Leave_FreesTheNickname()
+    {
+        var (_, code) = await StartSessionAsync(SampleQuiz());
+        var token = await JoinAsync(code, "Sam");
+
+        await Manager.LeaveAsync(token);
+
+        Assert.Equal(JoinError.None, (await Manager.JoinAsync(code, "Sam", "c2")).Error);
+    }
+
+    [Fact]
+    public async Task Leave_BadToken_DoesNothing()
+    {
+        var (id, code) = await StartSessionAsync(SampleQuiz());
+        await JoinAsync(code, "Sam");
+
+        await Manager.LeaveAsync("not-a-token");
+
+        Assert.Single((await Manager.GetHostViewAsync(id, HostId))!.Participants);
+    }
+
+    [Fact]
+    public async Task ChangeNickname_WorksInTheLobby()
+    {
+        var (id, code) = await StartSessionAsync(SampleQuiz());
+        await JoinAsync(code, "Sam");
+
+        Assert.Equal(JoinError.None, await Manager.ChangeNicknameAsync("Sam", "  Samwise "));
+
+        Assert.Equal("Samwise", (await Manager.GetHostViewAsync(id, HostId))!.Participants.Single().Nickname);
+        Assert.Contains(Broadcaster.ToConnections, m => m.Connection == "Sam" && m.Method == HubEvents.NicknameChanged && (string)m.Argument! == "Samwise");
+    }
+
+    [Fact]
+    public async Task ChangeNickname_FollowsTheJoinRules()
+    {
+        var (_, code) = await StartSessionAsync(SampleQuiz());
+        await JoinAsync(code, "Sam");
+        await JoinAsync(code, "Alex");
+
+        Assert.Equal(JoinError.NicknameTaken, await Manager.ChangeNicknameAsync("Sam", "alex"));
+        Assert.Equal(JoinError.NicknameInvalid, await Manager.ChangeNicknameAsync("Sam", "x"));
+        Assert.Equal(JoinError.NicknameNotAllowed, await Manager.ChangeNicknameAsync("Sam", "shithead"));
+        Assert.Equal(JoinError.None, await Manager.ChangeNicknameAsync("Sam", "sam"));
+    }
+
+    [Fact]
+    public async Task ChangeNickname_IsRefusedOnceTheSessionStarts()
+    {
+        var (id, code) = await StartSessionAsync(SampleQuiz());
+        await JoinAsync(code, "Sam");
+        await Manager.StartAsync(id, HostId);
+
+        Assert.Equal(JoinError.SessionStarted, await Manager.ChangeNicknameAsync("Sam", "Samwise"));
+        Assert.Equal("Sam", (await Manager.GetHostViewAsync(id, HostId))!.Participants.Single().Nickname);
+    }
+
+    [Fact]
+    public async Task ChangeNickname_FromAConnectionThatHasNotJoined_IsNotFound() =>
+        Assert.Equal(JoinError.SessionNotFound, await Manager.ChangeNicknameAsync("stranger", "Sam"));
+
+    [Fact]
     public async Task Phases_MustRunInOrder()
     {
         var (id, _) = await RunningSessionAsync(SampleQuiz());

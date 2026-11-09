@@ -60,6 +60,12 @@ public sealed class SessionHub(LiveSessionManager manager) : Hub
     public Task<SubmitResult> SubmitAnswer(int questionId, AnswerPayload answer) =>
         manager.SubmitAnswerAsync(Context.ConnectionId, questionId, answer);
 
+    public Task<JoinError> ChangeNickname(string nickname) =>
+        manager.ChangeNicknameAsync(Context.ConnectionId, nickname);
+
+    public Task Leave(string participantToken) =>
+        manager.LeaveAsync(participantToken);
+
     [Authorize(Roles = Roles.Instructor)]
     public Task<ProjectorState?> WatchProjector(Guid sessionId) =>
         manager.WatchProjectorAsync(sessionId, Context.UserIdentifier!, Context.ConnectionId);

@@ -74,8 +74,8 @@ public sealed class HubRateLimitFilter(LiveRateLimiter limiter) : IHubFilter
 
         var allowed = invocationContext.HubMethodName switch
         {
-            nameof(SessionHub.Join) => limiter.TryJoin(connectionId, address),
-            nameof(SessionHub.Rejoin) => limiter.TryRejoin(connectionId, address),
+            nameof(SessionHub.Join) or nameof(SessionHub.ChangeNickname) => limiter.TryJoin(connectionId, address),
+            nameof(SessionHub.Rejoin) or nameof(SessionHub.Leave) => limiter.TryRejoin(connectionId, address),
             nameof(SessionHub.SubmitAnswer) => limiter.TryAnswer(connectionId, address),
             _ => true,
         };
