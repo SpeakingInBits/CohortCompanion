@@ -1,6 +1,5 @@
 using CohortCompanion.Shared.Live;
 using CohortCompanion.Web.Auth;
-using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.SignalR;
 
 namespace CohortCompanion.Web.Live;
@@ -66,9 +65,16 @@ public sealed class SessionHub(LiveSessionManager manager) : Hub
     public Task Leave(string participantToken) =>
         manager.LeaveAsync(participantToken);
 
-    [Authorize(Roles = Roles.Instructor)]
-    public Task<ProjectorState?> WatchProjector(Guid sessionId) =>
-        manager.WatchProjectorAsync(sessionId, Context.UserIdentifier!, Context.ConnectionId);
+    /// <summary>
+    /// For the instructor running the session, or anyone with its projector link. The projector shows only what the
+    /// class already sees in the room.
+    /// </summary>
+    public Task<ProjectorState?> WatchProjector(Guid sessionId, string? key) =>
+        manager.WatchProjectorAsync(
+            sessionId,
+            Context.User?.IsInRole(Roles.Instructor) == true ? Context.UserIdentifier : null,
+            Context.ConnectionId,
+            key);
 
     public override async Task OnDisconnectedAsync(Exception? exception)
     {

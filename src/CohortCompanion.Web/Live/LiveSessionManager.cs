@@ -31,7 +31,9 @@ public sealed record HostView(
     QuestionResults? LiveResults,
     bool IsTimed,
     IReadOnlyList<LeaderboardEntry>? Leaderboard,
-    DeckView? Deck);
+    DeckView? Deck,
+    string ProjectorKey,
+    DateTime? EndsByItselfUtc);
 
 /// <summary>What the instructor sees while presenting, including the notes students never receive.</summary>
 public sealed record DeckView(string ThemeId, SlideView? Current, SlideView? Next, string SpeakerNotes);
@@ -58,6 +60,12 @@ public sealed partial class LiveSessionManager(
 
     /// <summary>A session with no activity for this long is ended, so per-student data can't linger.</summary>
     public static readonly TimeSpan AbandonedAfter = TimeSpan.FromHours(12);
+
+    /// <summary>
+    /// A quiz that reached its end is ended this long afterwards, in case the instructor doesn't, so nicknames and
+    /// answers don't stay around for the rest of the day.
+    /// </summary>
+    public static readonly TimeSpan EndAfterFinishing = TimeSpan.FromMinutes(30);
 
     /// <summary>The countdown before a timed quiz's first question opens.</summary>
     public static readonly TimeSpan GetReadyTime = TimeSpan.FromSeconds(3);
@@ -136,6 +144,8 @@ public sealed partial class LiveSessionManager(
     private async Task<Guid?> RegisterAsync(LiveRuntime runtime, string snapshotJson, int? quizId, int? presentationId, CancellationToken cancellationToken)
     {
         var now = runtime.LastActivityUtc;
+        runtime.SourceId = quizId ?? presentationId;
+        runtime.Extras.ProjectorKey = NewProjectorKey();
         sessionByCode[runtime.JoinCode] = runtime.Id;
 
         await using var db = await dbFactory.CreateDbContextAsync(cancellationToken);
@@ -160,6 +170,35 @@ public sealed partial class LiveSessionManager(
         sessions[runtime.Id] = runtime;
         return runtime.Id;
     }
+
+    /// <summary>The secret in a projector link. It only shows what the class already sees on the projector.</summary>
+    private static string NewProjectorKey() => Convert.ToHexString(RandomNumberGenerator.GetBytes(24)).ToLowerInvariant();
+
+    /// <summary>
+    /// The session this instructor is already running for a quiz or deck, if any, so starting it again goes back
+    /// to that session instead of opening a second one with another join code.
+    /// </summary>
+    public Guid? FindLiveSession(string hostId, SessionKind kind, int sourceId) =>
+        sessions.Values
+            .Where(s => s.HostId == hostId && s.Kind == kind && s.SourceId == sourceId && s.Status != SessionStatus.Ended)
+            .Select(s => (Guid?)s.Id)
+            .FirstOrDefault();
+
+    /// <summary>Starts a session for the quiz, or returns the one already running. Null if the quiz can't run.</summary>
+    public async Task<(Guid? Id, bool Resumed)> StartOrResumeQuizAsync(Quiz quiz, string hostId) =>
+        quiz.OwnerId == hostId && FindLiveSession(hostId, SessionKind.Quiz, quiz.Id) is { } running
+            ? (running, true)
+            : (await CreateQuizSessionAsync(quiz, hostId), false);
+
+    /// <summary>Starts a session for the deck, or returns the one already running.</summary>
+    public async Task<(Guid? Id, bool Resumed)> StartOrResumePresentationAsync(PresentationDocument document, string hostId) =>
+        FindLiveSession(hostId, SessionKind.Presentation, document.Id) is { } running
+            ? (running, true)
+            : (await CreatePresentationSessionAsync(document, hostId), false);
+
+    /// <summary>The host page for a session that was just started or resumed.</summary>
+    public static string HostPath(Guid sessionId, bool resumed) =>
+        resumed ? $"sessions/{sessionId}/host?resumed=true" : $"sessions/{sessionId}/host";
 
     private string ReserveJoinCode()
     {
@@ -438,9 +477,14 @@ public sealed partial class LiveSessionManager(
 
     // ---- Projector ----
 
-    public async Task<ProjectorState?> WatchProjectorAsync(Guid sessionId, string hostId, string connectionId)
+    /// <summary>
+    /// Connects a projector. It needs either the instructor running the session, or the session's projector key,
+    /// so a room PC can show it without anyone signing in there.
+    /// </summary>
+    public async Task<ProjectorState?> WatchProjectorAsync(Guid sessionId, string? hostId, string connectionId, string? key = null)
     {
-        if (!sessions.TryGetValue(sessionId, out var runtime) || runtime.HostId != hostId)
+        if (!sessions.TryGetValue(sessionId, out var runtime)
+            || !(hostId is not null && runtime.HostId == hostId || KeyMatches(runtime.Extras.ProjectorKey, key)))
         {
             return null;
         }
@@ -457,6 +501,10 @@ public sealed partial class LiveSessionManager(
             runtime.Gate.Release();
         }
     }
+
+    private static bool KeyMatches(string? expected, string? given) =>
+        expected is { Length: > 0 } && given is { Length: > 0 }
+        && CryptographicOperations.FixedTimeEquals(Encoding.UTF8.GetBytes(expected), Encoding.UTF8.GetBytes(given));
 
     // ---- Instructor views ----
 
@@ -489,7 +537,9 @@ public sealed partial class LiveSessionManager(
                 question is null ? null : BuildResults(runtime, question, reveal: true),
                 runtime.Quiz?.Mode == QuizMode.Timed,
                 runtime.Quiz?.ScoringEnabled == true ? BuildLeaderboard(runtime, 5) : null,
-                BuildDeckView(runtime));
+                BuildDeckView(runtime),
+                runtime.Extras.ProjectorKey ?? "",
+                runtime.Phase == QuestionPhase.Finished ? runtime.Extras.PhaseStartedUtc + EndAfterFinishing : null);
         }
         finally
         {
@@ -870,7 +920,11 @@ public sealed partial class LiveSessionManager(
                 DeadlineUtc = row.PhaseDeadlineUtc,
                 LastActivityUtc = row.LastActivityUtc,
                 Extras = JsonSerializer.Deserialize<RuntimeExtras>(row.RuntimeJson, Json) ?? new RuntimeExtras(),
+                SourceId = row.QuizId ?? row.PresentationId,
             };
+
+            // Sessions saved before projector links existed get a key now.
+            runtime.Extras.ProjectorKey ??= NewProjectorKey();
 
             foreach (var participant in row.Participants)
             {
@@ -951,6 +1005,16 @@ public sealed partial class LiveSessionManager(
             {
                 await FinishAsync(runtime);
                 logger.LogInformation("Ended abandoned session {SessionId}.", runtime.Id);
+                changed = true;
+                return;
+            }
+
+            if (runtime.Phase == QuestionPhase.Finished
+                && runtime.Extras.PhaseStartedUtc is { } finishedAt
+                && now - finishedAt >= EndAfterFinishing)
+            {
+                await FinishAsync(runtime);
+                logger.LogInformation("Ended finished session {SessionId}.", runtime.Id);
                 changed = true;
                 return;
             }

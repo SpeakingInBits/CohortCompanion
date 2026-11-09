@@ -126,6 +126,9 @@
     private int timerTotalMs;
     private Timer? countdown;
 
+    /// <summary>The session's projector key, so a room PC can show it without signing in.</summary>
+    [SupplyParameterFromQuery] public string? Key { get; set; }
+
     private string JoinHost => new Uri(Navigation.BaseUri).Authority;
 
     private int? RemainingSeconds => view?.Phase.IsPaused == true
@@ -173,16 +176,16 @@
         }
         catch (Exception)
         {
-            message = "Couldn't connect. Sign in as the instructor running this session, then reload.";
+            message = "Couldn't connect. Check the connection, then reload.";
         }
     }
 
     private async Task WatchAsync()
     {
-        var state = await hub!.InvokeAsync<ProjectorState?>("WatchProjector", SessionId);
+        var state = await hub!.InvokeAsync<ProjectorState?>("WatchProjector", SessionId, Key);
         if (state is null)
         {
-            message = "This session isn't running.";
+            message = "This session isn't running, or this projector link is out of date. Open it again from the host page.";
             StateHasChanged();
             return;
         }

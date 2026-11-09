@@ -140,14 +140,14 @@ else
     {
         runError = null;
         var quiz = await Quizzes.GetAsync(id, userId);
-        var sessionId = quiz is null ? null : await Manager.CreateQuizSessionAsync(quiz, userId);
-        if (sessionId is null)
+        var (sessionId, resumed) = quiz is null ? (null, false) : await Manager.StartOrResumeQuizAsync(quiz, userId);
+        if (sessionId is not { } started)
         {
             runError = "This quiz isn't ready to run yet. Open it to see what needs fixing.";
             return;
         }
 
-        NavigationManager.NavigateTo($"sessions/{sessionId}/host");
+        NavigationManager.NavigateTo(LiveSessionManager.HostPath(started, resumed));
     }
 
     private async Task DeleteAsync(int id)
