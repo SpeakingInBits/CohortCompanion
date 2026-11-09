@@ -67,7 +67,7 @@ else
                         {
                             <td>@item.OwnerName</td>
                         }
-                        <td>@item.UpdatedAtUtc.ToString("yyyy-MM-dd HH:mm") UTC</td>
+                        <td><LocalTime Utc="item.UpdatedAtUtc" /></td>
                         <td class="text-end text-nowrap">
                             @if (!showAll)
                             {

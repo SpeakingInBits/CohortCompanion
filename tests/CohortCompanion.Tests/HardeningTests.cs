@@ -265,4 +265,19 @@ public sealed class SessionHistoryTests : LiveSessionTestBase
         Assert.Null(await history.GetAsync(id, HostId));
         Assert.Empty(await history.ListAsync(HostId));
     }
+
+    [Fact]
+    public async Task EndedPresentation_IsNotInHistory()
+    {
+        var deck = new CohortCompanion.Web.Presentations.PresentationDocument
+        {
+            Id = 3,
+            Title = "Deck",
+            Slides = [new CohortCompanion.Web.Presentations.EditableSlide()],
+        };
+        var id = (await Manager.CreatePresentationSessionAsync(deck, HostId))!.Value;
+        await Manager.EndAsync(id, HostId);
+
+        Assert.Empty(await new SessionHistoryService(Db).ListAsync(HostId));
+    }
 }

@@ -1,0 +1,28 @@
+@* A UTC time, shown in the viewer's own time zone once the browser has said what it is. *@
+@inject BrowserTimeZone BrowserTimeZone
+
+<time datetime="@AsUtc.ToString("O")" title="@($"{AsUtc:yyyy-MM-dd HH:mm} UTC")">@Text</time>
+
+@code {
+    [Parameter, EditorRequired] public DateTime Utc { get; set; }
+
+    /// <summary>How to show the time. Leave out the time of day for dates such as an expiry.</summary>
+    [Parameter] public string Format { get; set; } = "MMM d, yyyy h:mm tt";
+
+    private TimeZoneInfo? zone;
+
+    private DateTime AsUtc => DateTime.SpecifyKind(Utc, DateTimeKind.Utc);
+
+    private string Text => zone is null
+        ? $"{AsUtc.ToString(Format)} UTC"
+        : TimeZoneInfo.ConvertTimeFromUtc(AsUtc, zone).ToString(Format);
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender && await BrowserTimeZone.GetAsync() is { } found)
+        {
+            zone = found;
+            StateHasChanged();
+        }
+    }
+}

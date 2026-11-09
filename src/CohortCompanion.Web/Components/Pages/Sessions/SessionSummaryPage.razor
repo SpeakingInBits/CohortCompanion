@@ -21,7 +21,7 @@ else if (detail is null)
 else
 {
     <h1>@detail.Title</h1>
-    <p class="text-secondary">Ended @detail.EndedAtUtc.ToString("yyyy-MM-dd HH:mm") UTC. Totals only: nicknames and individual answers were deleted.</p>
+    <p class="text-secondary">Ended <LocalTime Utc="detail.EndedAtUtc" />. Totals only: nicknames and individual answers were deleted.</p>
 
     @if (detail.Questions.Count == 0)
     {

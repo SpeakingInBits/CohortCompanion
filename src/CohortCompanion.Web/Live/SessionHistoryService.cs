@@ -16,12 +16,13 @@ public sealed class SessionHistoryService(IDbContextFactory<ApplicationDbContext
 {
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
 
+    /// <summary>Ended quizzes. Presentations keep no totals, so there's nothing of theirs to look back at.</summary>
     public async Task<List<PastSession>> ListAsync(string hostId, CancellationToken cancellationToken = default)
     {
         await using var db = await dbFactory.CreateDbContextAsync(cancellationToken);
         var rows = await db.LiveSessions
             .AsNoTracking()
-            .Where(s => s.HostId == hostId && s.Status == SessionStatus.Ended)
+            .Where(s => s.HostId == hostId && s.Status == SessionStatus.Ended && s.Kind == SessionKind.Quiz)
             .Select(s => new PastSession(s.Id, s.Title, s.Kind, s.EndedAtUtc ?? s.CreatedAtUtc))
             .ToListAsync(cancellationToken);
         return rows.OrderByDescending(s => s.EndedAtUtc).ToList();
