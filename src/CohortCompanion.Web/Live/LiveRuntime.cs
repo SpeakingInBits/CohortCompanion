@@ -24,6 +24,9 @@ internal sealed class LiveRuntime
 
     public PresentationSnapshot? Deck { get; init; }
 
+    /// <summary>The quiz or presentation this session was started from.</summary>
+    public int? SourceId { get; set; }
+
     public SessionStatus Status { get; set; }
 
     public int CurrentIndex { get; set; }
@@ -62,6 +65,9 @@ internal sealed class LiveRuntime
 internal sealed class RuntimeExtras
 {
     public DateTime? PhaseStartedUtc { get; set; }
+
+    /// <summary>Lets the projector link open without signing in. It shows only what the class already sees.</summary>
+    public string? ProjectorKey { get; set; }
 
     /// <summary>Time left on the clock while paused.</summary>
     public int? PausedRemainingMs { get; set; }

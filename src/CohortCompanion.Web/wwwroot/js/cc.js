@@ -40,6 +40,33 @@ window.cc = {
         }
     },
 
+    // Lets the keyboard or a presentation clicker drive the host page from anywhere on it, not only once some part
+    // of the page has focus. Keys typed into a field are left alone, and so is Space on a focused button, which
+    // already presses that button. Returns a handle whose dispose() stops listening.
+    listenForHostKeys(dotNet) {
+        const keys = new Set(["ArrowRight", "ArrowLeft", "PageDown", "PageUp", " "]);
+        const handler = (event) => {
+            if (!keys.has(event.key) || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey || event.repeat) {
+                return;
+            }
+
+            const target = event.target instanceof Element ? event.target : null;
+            if (target?.closest("input, textarea, select, [contenteditable]:not([contenteditable=false])")) {
+                return;
+            }
+
+            if (event.key === " " && target?.closest("button, a, summary")) {
+                return;
+            }
+
+            event.preventDefault();
+            dotNet.invokeMethodAsync("OnHostKey", event.key);
+        };
+
+        document.addEventListener("keydown", handler);
+        return { dispose: () => document.removeEventListener("keydown", handler) };
+    },
+
     // Lets a finger drag the current slide sideways. Anything that isn't clearly a sideways drag stays with
     // the browser, so scrolling a long slide, pinch zoom, and scrolling a wide code block all keep working.
     attachSwipe(stage, dotNet) {

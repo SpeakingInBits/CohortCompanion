@@ -9,15 +9,23 @@
 
 @inject LiveSessionManager Manager
 @inject NavigationManager NavigationManager
-@implements IDisposable
+@inject IJSRuntime JS
+@implements IAsyncDisposable
 
 <PageTitle>@(view?.Title ?? "Live session")</PageTitle>
 
 @if (ended)
 {
     <h1>Session ended</h1>
-    <p>Per-student data has been deleted. Only the per-question totals were kept.</p>
-    <a class="btn btn-primary" href="sessions/@Id/summary">See the totals</a>
+    @if (view?.Kind == SessionKind.Presentation)
+    {
+        <p>Everyone's nicknames have been deleted.</p>
+    }
+    else
+    {
+        <p>Per-student data has been deleted. Only the per-question totals were kept.</p>
+        <a class="btn btn-primary" href="sessions/@Id/summary">See the totals</a>
+    }
     <a class="btn btn-outline-secondary" href="sessions">Back to sessions</a>
 }
 else if (notFound)
@@ -34,7 +42,11 @@ else
     <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
         <h1 class="me-auto mb-0">@view.Title</h1>
         <span class="fs-5">Join code <strong class="font-monospace">@view.JoinCode</strong></span>
-        <a class="btn btn-outline-secondary" href="projector/@view.Id" target="_blank">Open projector view</a>
+        <span class="btn-group">
+            <a class="btn btn-outline-secondary" href="@ProjectorLink" target="_blank">Open projector view</a>
+            <button type="button" class="btn btn-outline-secondary" title="Copy a link that opens the projector view on any computer, without signing in"
+                    @onclick="CopyProjectorLinkAsync">@(copied ? "Copied" : "Copy link")</button>
+        </span>
         @if (confirmEnd)
         {
             <button type="button" class="btn btn-danger" @onclick="EndAsync">Confirm end</button>
@@ -45,6 +57,14 @@ else
             <button type="button" class="btn btn-outline-danger" @onclick="() => confirmEnd = true">End session</button>
         }
     </div>
+
+    @if (Resumed)
+    {
+        <div class="alert alert-info" role="status">
+            This was already running, so you're back in the same session and students keep their join code.
+            To start over, end this session, then run it again.
+        </div>
+    }
 
     <div class="row g-4">
         <div class="col-lg-8">
@@ -60,9 +80,9 @@ else
             }
             else if (view.Deck is { } deck)
             {
-                <div tabindex="0" @onkeydown="OnPresenterKeyAsync" aria-label="Presenter controls. Use the arrow keys to change slides.">
+                <div>
                     <div class="d-flex justify-content-between align-items-center mb-2">
-                        <span class="text-secondary">Slide @(view.QuestionIndex + 1) of @view.QuestionCount</span>
+                        <span class="text-secondary">Slide @(view.QuestionIndex + 1) of @view.QuestionCount · arrow keys or a clicker work anywhere on this page</span>
                         <span class="d-flex gap-2">
                             <button type="button" class="btn btn-outline-primary" disabled="@(view.QuestionIndex == 0)" @onclick="() => RunAsync(Manager.PreviousSlideAsync)">Previous</button>
                             <button type="button" class="btn btn-primary" disabled="@(view.QuestionIndex + 1 >= view.QuestionCount)" @onclick="() => RunAsync(Manager.NextSlideAsync)">Next</button>
@@ -96,7 +116,15 @@ else
                 <div class="card">
                     <div class="card-body">
                         <h2 class="h4">That's the last question</h2>
-                        <p>Ending the session deletes every nickname and answer, and keeps only the per-question totals.</p>
+                        <p>
+                            When you're done showing the final results, end the session. That deletes every nickname
+                            and answer, and keeps only the per-question totals.
+                        </p>
+                        <button type="button" class="btn btn-primary btn-lg" @onclick="EndAsync">End session and keep the totals</button>
+                        @if (view.EndsByItselfUtc is { } endsAt)
+                        {
+                            <p class="form-text mt-2 mb-0">If you don't, it ends by itself in @MinutesUntil(endsAt).</p>
+                        }
                     </div>
                 </div>
             }
@@ -139,7 +167,7 @@ else
                                     <button type="button" class="btn btn-primary" @onclick="() => RunAsync(Manager.OpenQuestionAsync)">Open question</button>
                                     break;
                                 case QuestionPhase.Open:
-                                    <button type="button" class="btn btn-primary" @onclick="() => RunAsync(Manager.CloseQuestionAsync)">Close question</button>
+                                    <button type="button" class="btn btn-primary" @onclick="() => RunAsync(Manager.CloseAndShowResultsAsync)">Close and show results</button>
                                     break;
                                 case QuestionPhase.Closed:
                                     <button type="button" class="btn btn-primary" @onclick="() => RunAsync(Manager.ShowResultsAsync)">Show results</button>
@@ -149,12 +177,13 @@ else
                                     {
                                         <button type="button" class="btn btn-primary" @onclick="() => RunAsync(Manager.RevealAnswerAsync)">Reveal answer</button>
                                     }
-                                    <button type="button" class="btn btn-outline-primary" @onclick="() => RunAsync(Manager.NextAsync)">@NextLabel</button>
+                                    <button type="button" class="btn @(question.Type == QuestionType.WordCloud ? "btn-primary" : "btn-outline-primary")" @onclick="() => RunAsync(Manager.NextAsync)">@NextLabel</button>
                                     break;
                                 case QuestionPhase.AnswerRevealed:
                                     <button type="button" class="btn btn-primary" @onclick="() => RunAsync(Manager.NextAsync)">@NextLabel</button>
                                     break;
                             }
+                            <span class="form-text align-self-center ms-1">Space, → or a clicker presses the blue button.</span>
                             }
                         </div>
 
@@ -224,6 +253,12 @@ else
     private Guid? renaming;
     private string? newName;
     private Timer? clock;
+    private bool copied;
+    private IJSObjectReference? keyListener;
+    private DotNetObjectReference<HostSession>? selfReference;
+
+    /// <summary>Set when Run live or Present found this session already running and came back to it.</summary>
+    [SupplyParameterFromQuery] public bool Resumed { get; set; }
 
     private string PhaseName => view?.Phase switch
     {
@@ -263,7 +298,7 @@ else
 
     private async Task TickClockAsync()
     {
-        if (view?.RemainingMs is not null)
+        if (view?.RemainingMs is not null || view?.EndsByItselfUtc is not null)
         {
             await RefreshAsync();
             StateHasChanged();
@@ -279,7 +314,7 @@ else
         }
         else if (view is not null)
         {
-            // It ended without this page asking, which means it was swept up as abandoned.
+            // It ended without this page asking: it finished long enough ago, or was abandoned.
             ended = true;
         }
     }
@@ -290,16 +325,62 @@ else
         await RefreshAsync();
     }
 
-    private async Task OnPresenterKeyAsync(KeyboardEventArgs e)
+    /// <summary>
+    /// Keys pressed anywhere on the page, unless someone's typing. Presentation clickers send PageDown and PageUp.
+    /// Slides go forwards and back. An instructor-paced quiz takes its next step forwards; a timed quiz runs itself,
+    /// so a stray key press there does nothing.
+    /// </summary>
+    [JSInvokable]
+    public async Task OnHostKey(string key)
     {
-        // Presentation clickers send PageUp and PageDown.
-        if (e.Key is "ArrowRight" or "PageDown" or " ")
+        var forward = key is "ArrowRight" or "PageDown" or " ";
+        var back = key is "ArrowLeft" or "PageUp";
+        if (view is not { Status: SessionStatus.Running } current || (!forward && !back))
         {
-            await RunAsync(Manager.NextSlideAsync);
+            return;
         }
-        else if (e.Key is "ArrowLeft" or "PageUp")
+
+        var command = current.Kind == SessionKind.Presentation
+            ? (forward ? Manager.NextSlideAsync : Manager.PreviousSlideAsync)
+            : forward && !current.IsTimed ? NextQuizStep(current) : null;
+        if (command is not null)
         {
-            await RunAsync(Manager.PreviousSlideAsync);
+            await RunAsync(command);
+            StateHasChanged();
+        }
+    }
+
+    /// <summary>The blue button for the quiz's current phase.</summary>
+    private Func<Guid, string, Task<bool>>? NextQuizStep(HostView current) => current.Phase switch
+    {
+        QuestionPhase.Waiting => Manager.OpenQuestionAsync,
+        QuestionPhase.Open => Manager.CloseAndShowResultsAsync,
+        QuestionPhase.Closed => Manager.ShowResultsAsync,
+        QuestionPhase.ShowingResults when current.Question?.Type != QuestionType.WordCloud => Manager.RevealAnswerAsync,
+        QuestionPhase.ShowingResults or QuestionPhase.AnswerRevealed => Manager.NextAsync,
+        _ => null,
+    };
+
+    private string ProjectorLink => $"projector/{Id}?key={Uri.EscapeDataString(view?.ProjectorKey ?? "")}";
+
+    private async Task CopyProjectorLinkAsync()
+    {
+        await JS.InvokeVoidAsync("navigator.clipboard.writeText", NavigationManager.ToAbsoluteUri(ProjectorLink).AbsoluteUri);
+        copied = true;
+    }
+
+    private static string MinutesUntil(DateTime utc)
+    {
+        var minutes = (int)Math.Ceiling(Math.Max(0, (utc - DateTime.UtcNow).TotalMinutes));
+        return minutes == 1 ? "1 minute" : $"{minutes} minutes";
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (keyListener is null && view is not null && !ended)
+        {
+            selfReference = DotNetObjectReference.Create(this);
+            keyListener = await JS.InvokeAsync<IJSObjectReference>("cc.listenForHostKeys", selfReference);
         }
     }
 
@@ -325,9 +406,23 @@ else
         confirmEnd = false;
     }
 
-    public void Dispose()
+    public async ValueTask DisposeAsync()
     {
         clock?.Dispose();
         Manager.HostViewChanged -= OnHostViewChanged;
+        if (keyListener is not null)
+        {
+            try
+            {
+                await keyListener.InvokeVoidAsync("dispose");
+                await keyListener.DisposeAsync();
+            }
+            catch (JSDisconnectedException)
+            {
+                // The browser has gone, and the listener with it.
+            }
+        }
+
+        selfReference?.Dispose();
     }
 }

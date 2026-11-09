@@ -76,6 +76,20 @@ public sealed partial class LiveSessionManager
             return true;
         });
 
+    /// <summary>Closes the question and shows its results in one step, the usual move in an instructor-paced quiz.</summary>
+    public Task<bool> CloseAndShowResultsAsync(Guid sessionId, string hostId) =>
+        CommandAsync(sessionId, hostId, async runtime =>
+        {
+            if (!InPhase(runtime, QuestionPhase.Open))
+            {
+                return false;
+            }
+
+            EnterPhase(runtime, QuestionPhase.ShowingResults);
+            await AnnouncePhaseAsync(runtime);
+            return true;
+        });
+
     public Task<bool> ShowResultsAsync(Guid sessionId, string hostId) =>
         CommandAsync(sessionId, hostId, async runtime =>
         {

@@ -131,10 +131,10 @@ else
     private async Task PresentAsync(int id)
     {
         var document = await Presentations.GetAsync(id, userId);
-        var sessionId = document is null ? null : await Manager.CreatePresentationSessionAsync(document, userId);
-        if (sessionId is not null)
+        var (sessionId, resumed) = document is null ? (null, false) : await Manager.StartOrResumePresentationAsync(document, userId);
+        if (sessionId is { } started)
         {
-            NavigationManager.NavigateTo($"sessions/{sessionId}/host");
+            NavigationManager.NavigateTo(LiveSessionManager.HostPath(started, resumed));
         }
     }
 
