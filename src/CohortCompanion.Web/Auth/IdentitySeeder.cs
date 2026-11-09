@@ -6,7 +6,10 @@ namespace CohortCompanion.Web.Auth;
 
 public static class IdentitySeeder
 {
-    /// <summary>Applies migrations in development, or when configured to, and makes sure every role exists.</summary>
+    /// <summary>
+    /// Applies migrations in development, or when configured to, makes sure every role exists, and that every
+    /// admin can also teach.
+    /// </summary>
     public static async Task InitializeDatabaseAsync(this WebApplication app)
     {
         await using var scope = app.Services.CreateAsyncScope();
@@ -25,5 +28,7 @@ public static class IdentitySeeder
                 await roleManager.CreateAsync(new IdentityRole(role));
             }
         }
+
+        await scope.ServiceProvider.GetRequiredService<InstructorAccessService>().EnsureAdminsTeachAsync();
     }
 }

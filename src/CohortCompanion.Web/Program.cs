@@ -57,6 +57,7 @@ builder.Services.AddSingleton<IEmailSender<ApplicationUser>, IdentityNoOpEmailSe
 builder.Services.Configure<AuthOptions>(builder.Configuration.GetSection(AuthOptions.SectionName));
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddScoped<InviteCodeService>();
+builder.Services.AddScoped<InstructorAccessService>();
 
 builder.Services.AddRadzenComponents();
 builder.Services.AddSingleton<ContentSanitizer>();
