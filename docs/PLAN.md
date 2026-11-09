@@ -172,7 +172,9 @@ Notes:
 - **Presenting**
   - The instructor laptop shows the control view: current slide, next slide, speaker notes, and the
     join code
-  - A projector view opens in a second window
+  - A projector view opens in a second window. Its link carries a per-session key, so a room PC can open it
+    without signing in
+  - The arrow keys, Space, and a clicker's Page Up/Down change slides from anywhere on the host page
   - Student devices show the current slide and follow the instructor automatically.
   - Students can swipe or tap back to any slide the instructor has already shown, but never ahead of
     the instructor. While a student is browsing an earlier slide, their device stops following, and a
@@ -202,8 +204,9 @@ Notes:
   - Scoring: points split evenly across blanks
 
 ### Modes
-- **Instructor-paced:** the instructor opens each question, closes it, shows results, and reveals the
-  answer. A per-question timer is optional and only closes the question; the instructor still advances.
+- **Instructor-paced:** the instructor opens each question, closes it and shows results in one step, and
+  reveals the answer. Space, the right arrow or a clicker takes the next step. A per-question timer is
+  optional and only closes the question; the instructor still advances.
 - **Timed:** every question has its own time limit (the quiz default, overridable per question).
   When the timer runs out the question closes, results and the answer show for a few seconds
   (configurable, default 5), and the quiz moves to the next question automatically. The instructor
@@ -243,8 +246,8 @@ Student to server:
 - `ChangeNickname(nickname) → error` (lobby only)
 - `Leave(participantToken)`
 
-Projector to server (requires the `Instructor` role and session ownership):
-- `WatchProjector(sessionId) → projectorState`
+Projector to server (requires the `Instructor` role and session ownership, or the session's projector key):
+- `WatchProjector(sessionId, key) → projectorState`
 
 Instructor controls don't go through the hub. The host page runs on the server (Interactive Server), so it
 calls `LiveSessionManager` directly, which checks that the caller owns the session: start, go to a slide, open,
@@ -306,6 +309,7 @@ and limits what is kept and shown.
   that writes the `SessionSummary` aggregates and marks the session `Ended`. Per-nickname results
   exist only while the session is live.
 - The final podium is shown before the session ends, so nothing is lost by deleting right after.
+- A quiz that reaches its end is ended by itself 30 minutes later, if the instructor hasn't ended it.
 - A background job sweeps sessions abandoned without being ended (no activity for 12 hours), so
   per-nickname data can't linger when an instructor just closes the laptop.
 - `SessionSummary` aggregates are kept with no participant data, so instructors can see how a class

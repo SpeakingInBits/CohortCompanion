@@ -40,7 +40,8 @@ Requirements: the .NET 10 SDK and SQL Server LocalDB (installed with Visual Stud
 
 1. Under **Quizzes**, create a quiz, add a question, and save it. Then choose **Run live**.
 2. Open the join link in another browser or a private window, and enter a nickname.
-3. On the host page, choose **Open projector view** for what the class sees, then **Start**.
+3. On the host page, choose **Open projector view** for what the class sees, then **Start**. **Copy link**
+   gives a projector link that works on another computer without signing in.
 
 **Presentations** work the same way, with **Present**.
 
