@@ -23,6 +23,13 @@
         <div class="join-panel">
             <div class="join-brand"><BrandMark /> CohortCompanion</div>
             <h1>Join a session</h1>
+            @if (savedToken is not null && savedCode is not null)
+            {
+                <div class="rejoin-offer" role="status">
+                    <span>You're still in session <strong>@savedCode</strong>.</span>
+                    <button type="button" class="btn btn-sm btn-outline-light" disabled="@busy" @onclick="RejoinSavedAsync">Go back to it</button>
+                </div>
+            }
             <form @onsubmit="JoinAsync">
                 <div class="mb-3">
                     <label for="code" class="form-label">Join code</label>
@@ -54,6 +61,7 @@
     {
         <div class="live-center">
             <h1>You've been removed from this session</h1>
+            <button type="button" class="btn btn-primary btn-lg mt-3" @onclick="ResetToForm">Join another session</button>
         </div>
     }
     else if (screen == Screen.Ended)
@@ -62,6 +70,7 @@
             <div class="done-mark" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5" /></svg></div>
             <h1>This session has ended</h1>
             <p>Thanks for taking part. Your answers have been deleted.</p>
+            <button type="button" class="btn btn-primary btn-lg mt-3" @onclick="ResetToForm">Join another session</button>
         </div>
     }
     else if (state is not null && phase is not null)
@@ -77,7 +86,14 @@
                 <strong>@state.Nickname</strong>
                 <span>@state.Title</span>
             </div>
-            @if (connectionLost)
+            @if (confirmingLeave)
+            {
+                <span class="leave-confirm">
+                    <button type="button" class="live-pill is-danger" @onclick="LeaveSessionAsync">Leave</button>
+                    <button type="button" class="live-pill" @onclick="() => confirmingLeave = false">Stay</button>
+                </span>
+            }
+            else if (connectionLost)
             {
                 <button type="button" class="live-pill is-danger" role="alert" @onclick="() => Navigation.Refresh(forceReload: true)">Connection lost. Reload this page.</button>
             }
@@ -93,6 +109,12 @@
             {
                 <span class="live-pill is-live"><i class="live-dot"></i> Live</span>
             }
+            @if (!confirmingLeave)
+            {
+                <button type="button" class="live-icon-button" aria-label="Leave this session" title="Leave this session" @onclick="() => confirmingLeave = true">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 4h4a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-4M10 16l-4-4 4-4M6 12h10" /></svg>
+                </button>
+            }
         </header>
 
         @if (phase.Status == SessionStatus.Lobby)
@@ -101,6 +123,26 @@
                 <div class="live-pulse"><Avatar Name="@state.Nickname" Class="avatar-xl" /></div>
                 <h1>@state.Title</h1>
                 <p>You're in. Waiting for the instructor to start.</p>
+                @if (renaming)
+                {
+                    <form class="lobby-rename" @onsubmit="ChangeNicknameAsync">
+                        <label for="new-nickname" class="form-label">New nickname</label>
+                        <input id="new-nickname" class="form-control form-control-lg" maxlength="@AnswerLimits.MaxNickname" autocomplete="off"
+                               enterkeyhint="done" @bind="newNickname" @bind:event="oninput" />
+                        @if (error is not null)
+                        {
+                            <div class="alert alert-danger mt-2 mb-0" role="alert">@error</div>
+                        }
+                        <div class="d-flex gap-2 mt-2">
+                            <button type="submit" class="btn btn-primary flex-fill" disabled="@busy">Save</button>
+                            <button type="button" class="btn btn-outline-secondary flex-fill" @onclick="CancelRename">Cancel</button>
+                        </div>
+                    </form>
+                }
+                else
+                {
+                    <button type="button" class="btn btn-link" @onclick="BeginRename">Change nickname</button>
+                }
             </div>
         }
         else if (state.Kind == SessionKind.Presentation)
@@ -120,7 +162,14 @@
         else if (phase.Question is null)
         {
             <div class="live-center">
-                <div class="live-pulse"><BrandMark /></div>
+                @if (phase.Phase == QuestionPhase.Waiting && RemainingSeconds is { } startsIn)
+                {
+                    <div class="get-ready-count" role="timer" @key="startsIn">@Math.Max(1, startsIn)</div>
+                }
+                else
+                {
+                    <div class="live-pulse"><BrandMark /></div>
+                }
                 <p>Get ready for question @(phase.QuestionIndex + 1) of @phase.QuestionCount.</p>
             </div>
         }
@@ -180,6 +229,8 @@
     private string themeId = SlideThemes.DefaultTheme;
     private int liveIndex;
     private string? token;
+    private string? savedCode;
+    private string? savedToken;
     private string? joinCode;
     private string? nickname;
     private string? error;
@@ -191,6 +242,9 @@
     private int timerTotalMs;
     private Timer? countdown;
     private bool keepingScreenOn;
+    private bool confirmingLeave;
+    private bool renaming;
+    private string? newNickname;
 
     private bool IsWatchingSlides => screen == Screen.Live
         && state?.Kind == SessionKind.Presentation
@@ -254,7 +308,7 @@
 
         countdown = new Timer(_ => InvokeAsync(() =>
         {
-            if (deadlineUtc is not null && phase?.Phase == QuestionPhase.Open)
+            if (deadlineUtc is not null && phase?.Phase is QuestionPhase.Open or QuestionPhase.Waiting)
             {
                 StateHasChanged();
             }
@@ -271,13 +325,17 @@
             return;
         }
 
-        token = await ReadTokenAsync();
-        if (token is not null)
+        (savedCode, savedToken) = await ReadTokenAsync();
+        if (savedToken is not null && !string.IsNullOrEmpty(Code) && Code == savedCode)
         {
+            // A reload, or the same link opened again: carry on where this student left off.
+            token = savedToken;
             await RejoinAsync();
         }
         else
         {
+            // Plain /join or another session's link. Rejoining by itself here would trap a student in an earlier
+            // class's session that was never ended, so the form offers it instead.
             screen = Screen.Form;
         }
     }
@@ -299,25 +357,31 @@
             return;
         }
 
+        var code = joinCode?.Trim() ?? "";
+        if (savedToken is not null && code == savedCode)
+        {
+            // The code of the session they're still in takes them back to it, rather than in a second time.
+            await RejoinSavedAsync();
+            return;
+        }
+
         busy = true;
         error = null;
         try
         {
-            var result = await hub.InvokeAsync<JoinResult>("Join", joinCode ?? "", nickname ?? "");
+            var result = await hub.InvokeAsync<JoinResult>("Join", code, nickname ?? "");
             if (result.Error != JoinError.None)
             {
-                error = result.Error switch
-                {
-                    JoinError.SessionNotFound => "There's no live session with that code. Check the code and try again.",
-                    JoinError.NicknameInvalid => $"Nicknames must be {AnswerLimits.MinNickname} to {AnswerLimits.MaxNickname} characters.",
-                    JoinError.NicknameNotAllowed => "Please choose a different nickname.",
-                    _ => "That nickname is taken. Please choose another.",
-                };
+                error = result.Error == JoinError.SessionNotFound
+                    ? "There's no live session with that code. Check the code and try again."
+                    : NicknameError(result.Error);
                 return;
             }
 
             token = result.ParticipantToken;
-            await WriteTokenAsync(token);
+            await LeaveSavedAsync();
+            await WriteTokenAsync(code, token);
+            await ShowUrlAsync($"j/{code}");
             ApplyState(result.State!);
         }
         catch (Exception)
@@ -327,6 +391,170 @@
         finally
         {
             busy = false;
+        }
+    }
+
+    private static string NicknameError(JoinError error) => error switch
+    {
+        JoinError.NicknameInvalid => $"Nicknames must be {AnswerLimits.MinNickname} to {AnswerLimits.MaxNickname} characters.",
+        JoinError.NicknameNotAllowed => "Please choose a different nickname.",
+        JoinError.NicknameTaken => "That nickname is taken. Please choose another.",
+        JoinError.SessionStarted => "The session has started, so only the instructor can change your nickname now.",
+        _ => "Your nickname couldn't be changed. Try again.",
+    };
+
+    /// <summary>Goes back to the session this device is still in, when the student asks to.</summary>
+    private async Task RejoinSavedAsync()
+    {
+        if (savedToken is null || busy)
+        {
+            return;
+        }
+
+        busy = true;
+        error = null;
+        token = savedToken;
+        var code = savedCode;
+        try
+        {
+            await RejoinAsync();
+        }
+        finally
+        {
+            busy = false;
+        }
+
+        if (screen == Screen.Live)
+        {
+            savedCode = null;
+            savedToken = null;
+            await ShowUrlAsync($"j/{code}");
+        }
+        else if (token is null)
+        {
+            savedCode = null;
+            savedToken = null;
+            error = "That session has ended.";
+        }
+        else
+        {
+            error = "Couldn't reach that session. Check your connection and try again.";
+        }
+    }
+
+    /// <summary>Tells the server this device is done with its earlier session, so the student doesn't linger there.</summary>
+    private async Task LeaveSavedAsync()
+    {
+        if (savedToken is { } old && old != token && hub is not null)
+        {
+            try
+            {
+                await hub.InvokeAsync("Leave", old);
+            }
+            catch (Exception)
+            {
+                // Best effort: that session still ends on its own.
+            }
+        }
+
+        savedCode = null;
+        savedToken = null;
+    }
+
+    private async Task LeaveSessionAsync()
+    {
+        if (hub is not null && token is not null)
+        {
+            try
+            {
+                await hub.InvokeAsync("Leave", token);
+            }
+            catch (Exception)
+            {
+                // Best effort: this device forgets the token either way, and the session ends on its own.
+            }
+        }
+
+        await ClearTokenAsync();
+        await ResetToForm();
+    }
+
+    private async Task ResetToForm()
+    {
+        state = null;
+        phase = null;
+        standing = null;
+        shownSlides.Clear();
+        answered = false;
+        confirmingLeave = false;
+        renaming = false;
+        connectionLost = false;
+        error = null;
+        joinCode = null;
+        savedCode = null;
+        savedToken = null;
+        screen = Screen.Form;
+        await ShowUrlAsync("join");
+    }
+
+    private void BeginRename()
+    {
+        newNickname = state?.Nickname;
+        error = null;
+        renaming = true;
+    }
+
+    private void CancelRename()
+    {
+        renaming = false;
+        error = null;
+    }
+
+    private async Task ChangeNicknameAsync()
+    {
+        if (hub is null || busy)
+        {
+            return;
+        }
+
+        busy = true;
+        error = null;
+        try
+        {
+            var result = await hub.InvokeAsync<JoinError>("ChangeNickname", newNickname ?? "");
+            if (result == JoinError.None)
+            {
+                // The server also sends NicknameChanged; this saves waiting for it.
+                state = state is null ? null : state with { Nickname = (newNickname ?? "").Trim() };
+                renaming = false;
+            }
+            else
+            {
+                error = NicknameError(result);
+            }
+        }
+        catch (Exception)
+        {
+            error = "Your nickname couldn't be changed. Try again.";
+        }
+        finally
+        {
+            busy = false;
+        }
+    }
+
+    /// <summary>
+    /// Puts the session's own link in the address bar without navigating, so a reload comes back to the same
+    /// session, while plain /join stays a fresh start.
+    /// </summary>
+    private async Task ShowUrlAsync(string relative)
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("history.replaceState", null, "", Navigation.ToAbsoluteUri(relative).AbsoluteUri);
+        }
+        catch (JSException)
+        {
         }
     }
 
@@ -459,32 +687,34 @@
     private async Task LeaveAsync(Screen next)
     {
         await ClearTokenAsync();
+        confirmingLeave = false;
+        renaming = false;
         screen = next;
         StateHasChanged();
     }
 
-    // The token is the only thing stored on the device. It's saved with its join code, so opening a link for
-    // a different session starts fresh. Storage can be blocked, for example in private browsing; the session
-    // then works but won't survive a reload.
-    private async Task<string?> ReadTokenAsync()
+    // The token is the only thing stored on the device. It's saved with its join code, so only that session's
+    // link rejoins by itself. Storage can be blocked, for example in private browsing; the session then works
+    // but won't survive a reload.
+    private async Task<(string? Code, string? Token)> ReadTokenAsync()
     {
         try
         {
             var stored = await JS.InvokeAsync<string?>("localStorage.getItem", TokenKey);
             var parts = stored?.Split('|');
-            return parts is { Length: 2 } && (string.IsNullOrEmpty(Code) || Code == parts[0]) ? parts[1] : null;
+            return parts is { Length: 2 } && parts[1].Length > 0 ? (parts[0], parts[1]) : (null, null);
         }
         catch (JSException)
         {
-            return null;
+            return (null, null);
         }
     }
 
-    private async Task WriteTokenAsync(string? value)
+    private async Task WriteTokenAsync(string code, string? value)
     {
         try
         {
-            await JS.InvokeVoidAsync("localStorage.setItem", TokenKey, $"{joinCode?.Trim()}|{value}");
+            await JS.InvokeVoidAsync("localStorage.setItem", TokenKey, $"{code}|{value}");
         }
         catch (JSException)
         {
