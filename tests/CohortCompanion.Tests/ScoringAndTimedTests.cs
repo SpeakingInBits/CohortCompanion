@@ -289,7 +289,7 @@ public sealed class TimedQuizTests : LiveSessionTestBase
         var (id, _) = await RunningSessionAsync(SampleQuiz(MultipleChoice(timeLimit: 10)));
         await Manager.OpenQuestionAsync(id, HostId);
 
-        Time.Advance(TimeSpan.FromHours(1));
+        Time.Advance(TimeSpan.FromMinutes(10));
         await Manager.TickAsync();
         await Manager.TickAsync();
 
