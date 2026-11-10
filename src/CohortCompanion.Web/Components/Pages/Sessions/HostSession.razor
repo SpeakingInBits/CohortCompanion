@@ -44,7 +44,7 @@ else
         <h1 class="me-auto mb-0">@view.Title</h1>
         <span class="fs-5">Join code <strong class="font-monospace">@view.JoinCode</strong></span>
         <span class="btn-group">
-            <a class="btn btn-outline-secondary" href="@ProjectorLink" target="_blank">Open projector view</a>
+            <a class="btn btn-outline-secondary @TourStep.Highlight(TourTarget.Projector)" href="@ProjectorLink" target="_blank">Open projector view</a>
             <button type="button" class="btn btn-outline-secondary" title="Copy a link that opens the projector view on any computer, without signing in"
                     @onclick="CopyProjectorLinkAsync">@(copied ? "Copied" : "Copy link")</button>
         </span>

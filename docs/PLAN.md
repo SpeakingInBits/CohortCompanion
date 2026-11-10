@@ -230,7 +230,8 @@ Notes:
 
 ### Getting-started tour
 - The first time an instructor signs in, the home page offers a short tour. They make a practice quiz, add a
-  question, run it live, join it from their phone as a student, step through the question, and end the session.
+  question, run it live, join it from their phone as a student, see what the projector view shows the class, step
+  through the question, and end the session.
 - The tour is a panel that floats over the real pages (quiz list, quiz editor, host page) and rings the control to
   use next. Nothing is simulated: the practice quiz and its session are ordinary ones the instructor keeps.
 - Its advice comes from what's on the page (does a quiz exist, is the question complete, has anyone joined, has an

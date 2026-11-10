@@ -15,6 +15,9 @@ public enum TourTarget
     AddQuestion,
     RunLive,
     JoinInfo,
+
+    /// <summary>The Open projector view button on the host page.</summary>
+    Projector,
     Start,
 
     /// <summary>The blue button for the quiz's current phase on the host page.</summary>
@@ -27,6 +30,9 @@ public sealed record TourStep(int Number, string Title, string Body, string? Act
 {
     /// <summary>The quiz whose row holds the target, on the quiz list.</summary>
     public int? TargetQuizId { get; init; }
+
+    /// <summary>A second control to ring, when the step asks for two things in turn.</summary>
+    public TourTarget AlsoTarget { get; init; }
 
     /// <summary>What's still missing before the next step, shown as a short list.</summary>
     public IReadOnlyList<string> Todo { get; init; } = [];
@@ -48,7 +54,7 @@ public sealed record TourStep(int Number, string Title, string Body, string? Act
 /// </summary>
 public static class TourGuide
 {
-    public const int StepCount = 6;
+    public const int StepCount = 7;
 
     public const string OfferTitle = "Take the 3-minute tour";
 
@@ -71,7 +77,8 @@ public static class TourGuide
 
     /// <summary>The CSS class that rings a control, when the step points at it.</summary>
     public static string? Highlight(this TourStep? step, TourTarget target, int? quizId = null) =>
-        step is not null && step.Target == target && (quizId is null || step.TargetQuizId == quizId) ? "tour-target" : null;
+        step is not null && target != TourTarget.None && (step.Target == target || step.AlsoTarget == target)
+            && (quizId is null || step.TargetQuizId == quizId) ? "tour-target" : null;
 
     /// <summary>The instructor's own quiz list, newest first.</summary>
     public static TourStep ForQuizList(IReadOnlyList<QuizListItem> quizzes)
@@ -164,7 +171,7 @@ public static class TourGuide
         if (view.Phase == QuestionPhase.Finished)
         {
             return new TourStep(
-                6,
+                7,
                 "End the session",
                 "Ending deletes every nickname and answer. Only the totals for each question are kept, for you to look "
                 + "back on under Sessions.",
@@ -175,7 +182,7 @@ public static class TourGuide
         if (view.IsTimed)
         {
             return new TourStep(
-                5,
+                6,
                 "Watch it run",
                 "A timed quiz runs itself: each question opens, closes when its time is up, shows the results, and "
                 + "moves on. Answer on your phone as the questions come.");
@@ -186,49 +193,49 @@ public static class TourGuide
         return view.Phase switch
         {
             QuestionPhase.Waiting => new TourStep(
-                5,
+                6,
                 "Open the question",
                 "You set the pace. Your phone says “Get ready” until you open the question, so you can talk first.",
                 "Press Open question.",
                 TourTarget.NextStep),
 
             QuestionPhase.Open when view.Participants.Count == 0 => new TourStep(
-                5,
+                6,
                 "Show the results",
                 "Nobody has joined, so no answers will arrive. You can still step through the rest.",
                 "Press Close and show results.",
                 TourTarget.NextStep),
 
             QuestionPhase.Open when view.ResponseCount == 0 => new TourStep(
-                5,
+                6,
                 "Answer on your phone",
                 "The question is on your phone now. Answers are counted here as they arrive, and the class can't see "
                 + "them yet.",
                 "Answer the question on your phone."),
 
             QuestionPhase.Open => new TourStep(
-                5,
+                6,
                 "Show the results",
                 $"{view.ResponseCount} of {view.Participants.Count} answered. So far only you can see how they answered.",
                 "Press Close and show results.",
                 TourTarget.NextStep),
 
             QuestionPhase.Closed => new TourStep(
-                5,
+                6,
                 "Show the results",
                 "The question is closed, so no more answers are taken.",
                 "Press Show results.",
                 TourTarget.NextStep),
 
             QuestionPhase.ShowingResults when !isPoll => new TourStep(
-                5,
+                6,
                 "Reveal the answer",
                 "Your phone and the projector now show how the class answered, without names.",
                 "Press Reveal answer.",
                 TourTarget.NextStep),
 
             _ => new TourStep(
-                5,
+                6,
                 "Move on",
                 isPoll
                     ? "Your phone and the projector now show what the class wrote, without names."
@@ -270,10 +277,14 @@ public static class TourGuide
     }
 
     private static TourStep Start(HostView view) => new(
-        4,
-        "Start the quiz",
-        $"“{view.Participants[0].Nickname}” has joined and is listed under Participants, where you can rename or remove "
-        + "anyone. In class, Open projector view puts the join code on the big screen.",
-        "Press Start.",
-        TourTarget.Start);
+        5,
+        "Show it to the class",
+        $"“{view.Participants[0].Nickname}” has joined. In class, the projector view goes on the big screen. While "
+        + "students arrive it shows the join code and their nicknames; once you start, each question and how the class "
+        + "answered, without names. Copy link opens it on a classroom computer without signing in.",
+        "Press Open projector view to see what the class sees, then press Start.",
+        TourTarget.Start)
+    {
+        AlsoTarget = TourTarget.Projector,
+    };
 }

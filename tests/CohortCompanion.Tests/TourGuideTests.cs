@@ -159,13 +159,27 @@ public class TourGuideTests
     }
 
     [Fact]
-    public void Lobby_OnceSomeoneJoins_PointsAtStart()
+    public void Lobby_OnceSomeoneJoins_ExplainsTheProjectorThenPointsAtStart()
     {
         var step = TourGuide.ForHost(Hosting(SessionStatus.Lobby), SchoolSite)!;
 
-        Assert.Equal(4, step.Number);
+        Assert.Equal(5, step.Number);
         Assert.Equal(TourTarget.Start, step.Target);
+        Assert.Equal(TourTarget.Projector, step.AlsoTarget);
         Assert.Contains("Phone1", step.Body);
+        Assert.Contains("projector view", step.Body);
+        Assert.Contains("Open projector view", step.Action);
+    }
+
+    [Fact]
+    public void Highlight_RingsBothTargetsOfATwoPartStep()
+    {
+        var step = TourGuide.ForHost(Hosting(SessionStatus.Lobby), SchoolSite);
+
+        Assert.Equal("tour-target", step.Highlight(TourTarget.Start));
+        Assert.Equal("tour-target", step.Highlight(TourTarget.Projector));
+        Assert.Null(step.Highlight(TourTarget.JoinInfo));
+        Assert.Null(step.Highlight(TourTarget.None));
     }
 
     [Theory]
@@ -178,7 +192,7 @@ public class TourGuideTests
     {
         var step = TourGuide.ForHost(Hosting(phase: phase, responses: responses), SchoolSite)!;
 
-        Assert.Equal(5, step.Number);
+        Assert.Equal(6, step.Number);
         Assert.Equal(action, step.Action);
         Assert.Equal(TourTarget.NextStep, step.Target);
     }
@@ -222,7 +236,7 @@ public class TourGuideTests
     {
         var step = TourGuide.ForHost(Hosting(phase: QuestionPhase.Open, timed: true), SchoolSite)!;
 
-        Assert.Equal(5, step.Number);
+        Assert.Equal(6, step.Number);
         Assert.Null(step.Action);
         Assert.Equal(TourTarget.None, step.Target);
     }
