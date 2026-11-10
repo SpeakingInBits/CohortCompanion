@@ -8,7 +8,7 @@ namespace CohortCompanion.Tests;
 public sealed class AbandonedSessionTests : LiveSessionTestBase
 {
     [Fact]
-    public async Task IdleSession_IsEndedAfterTwelveHours_AndItsStudentDataDeleted()
+    public async Task IdleSession_IsEndedAfterAnHour_AndItsStudentDataDeleted()
     {
         var (id, code) = await RunningSessionAsync(SampleQuiz());
         await JoinAsync(code, "Sam");
@@ -48,7 +48,7 @@ public sealed class AbandonedSessionTests : LiveSessionTestBase
 
         Time.Advance(LiveSessionManager.AbandonedAfter - TimeSpan.FromMinutes(1));
         await Manager.OpenQuestionAsync(id, HostId);
-        Time.Advance(TimeSpan.FromHours(1));
+        Time.Advance(LiveSessionManager.AbandonedAfter - TimeSpan.FromMinutes(1));
         await Manager.TickAsync();
 
         Assert.NotNull(await Manager.GetHostViewAsync(id, HostId));

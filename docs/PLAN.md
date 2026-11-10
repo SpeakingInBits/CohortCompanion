@@ -312,7 +312,7 @@ and limits what is kept and shown.
   exist only while the session is live.
 - The final podium is shown before the session ends, so nothing is lost by deleting right after.
 - A quiz that reaches its end is ended by itself 30 minutes later, if the instructor hasn't ended it.
-- A background job sweeps sessions abandoned without being ended (no activity for 12 hours), so
+- A background job sweeps sessions abandoned without being ended (no activity for an hour), so
   per-nickname data can't linger when an instructor just closes the laptop.
 - `SessionSummary` aggregates are kept with no participant data, so instructors can see how a class
   did on each question over time.
