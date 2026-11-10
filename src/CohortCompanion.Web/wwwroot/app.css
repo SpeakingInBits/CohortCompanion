@@ -1678,6 +1678,22 @@ html:has(.live-shell), body:has(.live-shell) {
     background: #fff;
 }
 
+/* Stays black on white in dark mode so authenticator apps can read it. */
+.authenticator-qr {
+    width: 13rem;
+    max-width: 100%;
+    padding: 0.5rem;
+    border: 1px solid var(--bs-border-color);
+    border-radius: var(--radius-lg);
+    background: #fff;
+}
+
+.authenticator-qr svg {
+    display: block;
+    width: 100%;
+    height: auto;
+}
+
 .projector-count {
     margin-bottom: 0.75rem;
     color: var(--bs-secondary-color);

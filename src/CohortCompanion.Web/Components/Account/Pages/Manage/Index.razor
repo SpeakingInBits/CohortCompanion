@@ -13,6 +13,14 @@
 <h3>Profile</h3>
 <StatusMessage />
 
+@if (!is2faEnabled)
+{
+    <div class="alert alert-warning d-flex flex-wrap align-items-center justify-content-between gap-2" role="status">
+        <span>Keep your account safer by adding two-factor authentication.</span>
+        <a href="Account/Manage/EnableAuthenticator" class="btn btn-sm btn-primary">Set up two-factor authentication</a>
+    </div>
+}
+
 <div class="row">
     <div class="col-xl-6">
         <EditForm Model="Input" FormName="profile" OnValidSubmit="OnValidSubmitAsync" method="post">
@@ -36,6 +44,8 @@
     private ApplicationUser? user;
     private string? username;
     private string? phoneNumber;
+    // Starts true so the warning never flashes before the user has loaded.
+    private bool is2faEnabled = true;
 
     [CascadingParameter]
     private HttpContext HttpContext { get; set; } = default!;
@@ -56,6 +66,7 @@
 
         username = await UserManager.GetUserNameAsync(user);
         phoneNumber = await UserManager.GetPhoneNumberAsync(user);
+        is2faEnabled = await UserManager.GetTwoFactorEnabledAsync(user);
 
         Input.PhoneNumber ??= phoneNumber;
     }
