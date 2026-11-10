@@ -8,6 +8,7 @@
 @using CohortCompanion.Web.Live
 
 @inject LiveSessionManager Manager
+@inject TourService Tour
 @inject NavigationManager NavigationManager
 @inject IJSRuntime JS
 @implements IAsyncDisposable
@@ -70,11 +71,11 @@ else
         <div class="col-lg-8">
             @if (view.Status == SessionStatus.Lobby)
             {
-                <div class="card">
+                <div class="card @TourStep.Highlight(TourTarget.JoinInfo)">
                     <div class="card-body text-center">
                         <p class="mb-1">Students go to <strong>@NavigationManager.ToAbsoluteUri("join")</strong> or scan:</p>
                         <img class="qr-code d-block mx-auto my-3" src="qr/@(view.JoinCode).svg" alt="QR code to join" />
-                        <button type="button" class="btn btn-primary btn-lg" @onclick="() => RunAsync(Manager.StartAsync)">Start</button>
+                        <button type="button" class="btn btn-primary btn-lg @TourStep.Highlight(TourTarget.Start)" @onclick="() => RunAsync(Manager.StartAsync)">Start</button>
                     </div>
                 </div>
             }
@@ -120,7 +121,7 @@ else
                             When you're done showing the final results, end the session. That deletes every nickname
                             and answer, and keeps only the per-question totals.
                         </p>
-                        <button type="button" class="btn btn-primary btn-lg" @onclick="EndAsync">End session and keep the totals</button>
+                        <button type="button" class="btn btn-primary btn-lg @TourStep.Highlight(TourTarget.EndSession)" @onclick="EndAsync">End session and keep the totals</button>
                         @if (view.EndsByItselfUtc is { } endsAt)
                         {
                             <p class="form-text mt-2 mb-0">If you don't, it ends by itself in @MinutesUntil(endsAt).</p>
@@ -150,6 +151,7 @@ else
                         }
 
                         <div class="d-flex flex-wrap gap-2 mb-3">
+                            @{ var nextStepRing = TourStep.Highlight(TourTarget.NextStep); }
                             @if (view.IsTimed)
                             {
                                 @if (view.Phase == QuestionPhase.Open)
@@ -164,23 +166,23 @@ else
                             @switch (view.Phase)
                             {
                                 case QuestionPhase.Waiting:
-                                    <button type="button" class="btn btn-primary" @onclick="() => RunAsync(Manager.OpenQuestionAsync)">Open question</button>
+                                    <button type="button" class="btn btn-primary @nextStepRing" @onclick="() => RunAsync(Manager.OpenQuestionAsync)">Open question</button>
                                     break;
                                 case QuestionPhase.Open:
-                                    <button type="button" class="btn btn-primary" @onclick="() => RunAsync(Manager.CloseAndShowResultsAsync)">Close and show results</button>
+                                    <button type="button" class="btn btn-primary @nextStepRing" @onclick="() => RunAsync(Manager.CloseAndShowResultsAsync)">Close and show results</button>
                                     break;
                                 case QuestionPhase.Closed:
-                                    <button type="button" class="btn btn-primary" @onclick="() => RunAsync(Manager.ShowResultsAsync)">Show results</button>
+                                    <button type="button" class="btn btn-primary @nextStepRing" @onclick="() => RunAsync(Manager.ShowResultsAsync)">Show results</button>
                                     break;
                                 case QuestionPhase.ShowingResults:
                                     @if (question.Type != QuestionType.WordCloud)
                                     {
-                                        <button type="button" class="btn btn-primary" @onclick="() => RunAsync(Manager.RevealAnswerAsync)">Reveal answer</button>
+                                        <button type="button" class="btn btn-primary @nextStepRing" @onclick="() => RunAsync(Manager.RevealAnswerAsync)">Reveal answer</button>
                                     }
-                                    <button type="button" class="btn @(question.Type == QuestionType.WordCloud ? "btn-primary" : "btn-outline-primary")" @onclick="() => RunAsync(Manager.NextAsync)">@NextLabel</button>
+                                    <button type="button" class="btn @(question.Type == QuestionType.WordCloud ? $"btn-primary {nextStepRing}" : "btn-outline-primary")" @onclick="() => RunAsync(Manager.NextAsync)">@NextLabel</button>
                                     break;
                                 case QuestionPhase.AnswerRevealed:
-                                    <button type="button" class="btn btn-primary" @onclick="() => RunAsync(Manager.NextAsync)">@NextLabel</button>
+                                    <button type="button" class="btn btn-primary @nextStepRing" @onclick="() => RunAsync(Manager.NextAsync)">@NextLabel</button>
                                     break;
                             }
                             <span class="form-text align-self-center ms-1">Space, → or a clicker presses the blue button.</span>
@@ -240,10 +242,19 @@ else
     </div>
 }
 
+<TourCoach Status="Tour.Status" Step="TourStep" OnChanged="StateHasChanged" />
+
 @code {
     [Parameter] public Guid Id { get; set; }
 
     [CascadingParameter] private Task<AuthenticationState> AuthState { get; set; } = default!;
+
+    /// <summary>The tour's advice for where this session is, or its goodbye once the session it ran has ended.</summary>
+    private TourStep? TourStep => tourFarewell ? TourGuide.Farewell
+        : Tour.IsActive && view is not null && !ended ? TourGuide.ForHost(view, NavigationManager.ToAbsoluteUri("join"))
+        : null;
+
+    private bool tourFarewell;
 
     private HostView? view;
     private string hostId = "";
@@ -275,6 +286,7 @@ else
     protected override async Task OnInitializedAsync()
     {
         hostId = (await AuthState).User.FindFirstValue(ClaimTypes.NameIdentifier)!;
+        await Tour.LoadAsync(hostId);
         await RefreshAsync();
         notFound = view is null;
         if (view is not null)
@@ -316,6 +328,17 @@ else
         {
             // It ended without this page asking: it finished long enough ago, or was abandoned.
             ended = true;
+            await FinishTourAsync();
+        }
+    }
+
+    /// <summary>Ending a quiz session is the tour's last step, so the tour ends with it.</summary>
+    private async Task FinishTourAsync()
+    {
+        if (ended && Tour.IsActive && view?.Kind == SessionKind.Quiz)
+        {
+            await Tour.FinishAsync();
+            tourFarewell = true;
         }
     }
 
@@ -404,6 +427,7 @@ else
     {
         ended = await Manager.EndAsync(Id, hostId);
         confirmEnd = false;
+        await FinishTourAsync();
     }
 
     public async ValueTask DisposeAsync()

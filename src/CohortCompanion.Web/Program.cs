@@ -13,6 +13,7 @@ using CohortCompanion.Web.Content;
 using CohortCompanion.Web.Data;
 using CohortCompanion.Web.Images;
 using CohortCompanion.Web.Live;
+using CohortCompanion.Web.Onboarding;
 using CohortCompanion.Web.Presentations;
 using CohortCompanion.Web.Quizzes;
 
@@ -61,6 +62,7 @@ builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddScoped<InviteCodeService>();
 builder.Services.AddScoped<InstructorAccessService>();
 builder.Services.AddScoped<BrowserTimeZone>();
+builder.Services.AddScoped<TourService>();
 
 builder.Services.AddRadzenComponents();
 builder.Services.AddSingleton<ContentSanitizer>();

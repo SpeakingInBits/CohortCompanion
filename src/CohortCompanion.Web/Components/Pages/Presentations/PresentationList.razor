@@ -110,7 +110,7 @@ else
         await LoadAsync();
     }
 
-    private async Task LoadAsync() => items = await Presentations.ListAsync(showAll && isAdmin ? null : userId);
+    private async Task LoadAsync() => items = await Presentations.ListAsync(userId, isAdmin, everyone: showAll);
 
     private async Task ToggleAllAsync(ChangeEventArgs e)
     {

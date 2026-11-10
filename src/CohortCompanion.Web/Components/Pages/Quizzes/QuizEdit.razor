@@ -10,6 +10,7 @@
 
 @inject QuizService Quizzes
 @inject LiveSessionManager Manager
+@inject TourService Tour
 @inject IJSRuntime JS
 @implements IAsyncDisposable
 @inject NavigationManager NavigationManager
@@ -32,7 +33,7 @@ else
         <span class="text-secondary" role="status">@status</span>
         <a class="btn btn-outline-secondary" href="quizzes">Back</a>
         <button type="button" class="btn btn-primary" disabled="@saving" @onclick="SaveAsync">Save</button>
-        <button type="button" class="btn btn-outline-primary" disabled="@(saving || problems.Count > 0)"
+        <button type="button" class="btn btn-outline-primary @TourStep.Highlight(TourTarget.RunLive)" disabled="@(saving || problems.Count > 0)"
                 title="@(problems.Count > 0 ? "Fix the problems listed below first" : dirty ? "Saves your changes, then starts a live session" : "Starts a live session")"
                 @onclick="RunLiveAsync">Run live</button>
     </div>
@@ -105,7 +106,7 @@ else
     }
 
     <div class="d-flex flex-wrap gap-2 mb-4">
-        <button type="button" class="btn btn-outline-primary" @onclick="() => Add(QuestionType.MultipleChoice)">Add multiple choice</button>
+        <button type="button" class="btn btn-outline-primary @TourStep.Highlight(TourTarget.AddQuestion)" @onclick="() => Add(QuestionType.MultipleChoice)">Add multiple choice</button>
         <button type="button" class="btn btn-outline-primary" @onclick="() => Add(QuestionType.WordCloud)">Add word cloud</button>
         <button type="button" class="btn btn-outline-primary" @onclick="() => Add(QuestionType.FillInBlank)">Add fill in the blank</button>
     </div>
@@ -124,10 +125,14 @@ else
     }
 }
 
+<TourCoach Status="Tour.Status" Step="TourStep" OnChanged="StateHasChanged" />
+
 @code {
     [Parameter] public int Id { get; set; }
 
     [CascadingParameter] private Task<AuthenticationState> AuthState { get; set; } = default!;
+
+    private TourStep? TourStep => Tour.IsActive && quiz is not null ? TourGuide.ForQuizEdit(quiz, problems) : null;
 
     private Quiz? quiz;
     private string ownerId = "";
@@ -142,6 +147,7 @@ else
     protected override async Task OnInitializedAsync()
     {
         ownerId = (await AuthState).User.FindFirstValue(ClaimTypes.NameIdentifier)!;
+        await Tour.LoadAsync(ownerId);
         await LoadAsync();
     }
 

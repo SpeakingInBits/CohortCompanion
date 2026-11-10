@@ -1,6 +1,6 @@
 # CohortCompanion – Planning Document
 
-_Status: milestones 1 to 7 built, demo not yet deployed. Last updated 2026-11-05_
+_Status: milestones 1 to 7 built, demo not yet deployed. Last updated 2026-11-10_
 
 CohortCompanion is an ASP.NET Core Blazor app for collaborative classroom activities, similar to Mentimeter.
 Instructors build **presentations** (slideshows students follow on their own devices) and **quizzes**
@@ -107,6 +107,8 @@ docs/
   admin, and nobody can change their own access.
 - `Instructor`: creates and runs their own presentations and quizzes.
 - Instructors can only see their own content and sessions. Sharing or co-teaching is a later feature.
+- Only admins can list every instructor's quizzes and presentations, and delete them. Even an admin can't open
+  or edit someone else's. Invite codes and the instructor list are admin-only pages.
 
 ### Students
 - No account. On join, the server issues a random **participant token**, stored in `localStorage` and
@@ -126,7 +128,7 @@ docs/
 
 | Entity | Key fields |
 |---|---|
-| `ApplicationUser` | Identity user, plus DisplayName, CreatedAt, InviteCodeId (if one was used) |
+| `ApplicationUser` | Identity user, plus DisplayName, CreatedAt, InviteCodeId (if one was used), TourStatus (`NotStarted`, `InProgress`, `Finished`) |
 | `InviteCode` | Id, Code, Note, LockedToEmail, MaxUses, UseCount, ExpiresAt, CreatedById, RevokedAt |
 
 ### Authoring
@@ -225,6 +227,19 @@ Notes:
 - Optional speed bonus: `score = points × (1 − 0.5 × elapsed / timeLimit)` for correct answers.
 - Optional leaderboard: top 5 between questions, plus a final podium (top 3). Each student sees
   their own rank and score on their device only.
+
+### Getting-started tour
+- The first time an instructor signs in, the home page offers a short tour. They make a practice quiz, add a
+  question, run it live, join it from their phone as a student, step through the question, and end the session.
+- The tour is a panel that floats over the real pages (quiz list, quiz editor, host page) and rings the control to
+  use next. Nothing is simulated: the practice quiz and its session are ordinary ones the instructor keeps.
+- Its advice comes from what's on the page (does a quiz exist, is the question complete, has anyone joined, has an
+  answer arrived), not from a remembered step number, so reloading or doing things out of order never leaves it
+  out of step.
+- Only whether the tour is unanswered, under way, or over is stored, on the instructor's account. It ends when the
+  practice session ends, or when the instructor ends it, and can be taken again from the home page.
+- A phone can't reach a copy of the site running on the instructor's own computer (`localhost`), so there the tour
+  asks for a second browser window to play the student instead.
 
 ---
 

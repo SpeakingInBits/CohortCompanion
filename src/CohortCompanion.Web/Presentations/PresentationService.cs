@@ -41,13 +41,17 @@ public sealed class PresentationService(
 
     private DateTime UtcNow => timeProvider.GetUtcNow().UtcDateTime;
 
-    /// <summary>Lists one instructor's decks, or every deck when <paramref name="ownerId"/> is null (admins only).</summary>
-    public async Task<List<PresentationListItem>> ListAsync(string? ownerId, CancellationToken cancellationToken = default)
+    /// <summary>
+    /// Lists the caller's own decks. An admin can ask for everyone's instead; from anyone else that request is
+    /// ignored, so the rule holds wherever this is called from.
+    /// </summary>
+    public async Task<List<PresentationListItem>> ListAsync(string userId, bool isAdmin = false, bool everyone = false, CancellationToken cancellationToken = default)
     {
+        var all = everyone && isAdmin;
         await using var db = await dbFactory.CreateDbContextAsync(cancellationToken);
         var rows = await db.Presentations
             .AsNoTracking()
-            .Where(p => ownerId == null || p.OwnerId == ownerId)
+            .Where(p => all || p.OwnerId == userId)
             .Select(p => new PresentationListItem(p.Id, p.Title, p.Slides.Count, p.UpdatedAtUtc, p.Owner!.DisplayName))
             .ToListAsync(cancellationToken);
         return rows.OrderByDescending(p => p.UpdatedAtUtc).ToList();

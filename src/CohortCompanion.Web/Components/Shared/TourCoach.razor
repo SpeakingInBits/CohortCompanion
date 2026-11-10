@@ -1,0 +1,110 @@
+@*
+    The getting-started tour's floating panel. A page works out its own step and passes it in; before the tour has
+    been offered, this offers it instead.
+*@
+@inject TourService Tour
+
+@if (Status == TourStatus.NotStarted)
+{
+    <aside class="tour-coach" aria-label="Getting-started tour">
+        <p class="tour-eyebrow">New here?</p>
+        <h2 class="tour-title">@TourGuide.OfferTitle</h2>
+        <p class="tour-body">@TourGuide.OfferBody</p>
+        <div class="tour-footer">
+            <button type="button" class="btn btn-sm btn-primary" @onclick="StartAsync">Start the tour</button>
+            <button type="button" class="tour-quiet" @onclick="EndAsync">Not now</button>
+        </div>
+    </aside>
+}
+else if (Step is { } step && (Status == TourStatus.InProgress || (step.IsFarewell && !closed)))
+{
+    <aside class="tour-coach @(collapsed ? "is-collapsed" : null)" aria-label="Getting-started tour">
+        <div class="tour-head">
+            <p class="tour-eyebrow">@(step.IsFarewell ? "Tour complete" : $"Tour · step {step.Number} of {TourGuide.StepCount}")</p>
+            @if (!step.IsFarewell)
+            {
+                <button type="button" class="tour-quiet" aria-expanded="@(collapsed ? "false" : "true")" @onclick="() => collapsed = !collapsed">
+                    @(collapsed ? "Show" : "Hide")
+                </button>
+            }
+        </div>
+
+        @if (!collapsed)
+        {
+            <div class="tour-dots" aria-hidden="true">
+                @for (var i = 1; i <= TourGuide.StepCount; i++)
+                {
+                    <i class="@(i < step.Number || step.IsFarewell ? "is-done" : i == step.Number ? "is-current" : null)"></i>
+                }
+            </div>
+
+            @* Keyed by its text, so a new step animates in, and is read out by screen readers. *@
+            <div class="tour-step" role="status" @key="(step.Title, step.Action)">
+                <h2 class="tour-title">@step.Title</h2>
+                <p class="tour-body">@step.Body</p>
+                @if (step.Todo.Count > 0)
+                {
+                    <p class="tour-todo-label">Still to do:</p>
+                    <ul class="tour-todo">
+                        @foreach (var item in step.Todo)
+                        {
+                            <li>@item</li>
+                        }
+                    </ul>
+                }
+                @if (step.Note is not null)
+                {
+                    <p class="tour-note">@step.Note</p>
+                }
+                @if (step.Action is not null)
+                {
+                    <p class="tour-action">@step.Action</p>
+                }
+                @if (step.LinkHref is not null)
+                {
+                    <a class="tour-link" href="@step.LinkHref" target="@(step.IsFarewell ? null : "_blank")">@step.LinkText</a>
+                }
+            </div>
+
+            <div class="tour-footer">
+                @if (step.IsFarewell)
+                {
+                    <button type="button" class="btn btn-sm btn-primary" @onclick="() => closed = true">Done</button>
+                }
+                else
+                {
+                    <button type="button" class="tour-quiet" title="You can take the tour again from the home page" @onclick="EndAsync">End tour</button>
+                }
+            </div>
+        }
+    </aside>
+}
+
+@code {
+    /// <summary>
+    /// Where the instructor is with the tour. Passed in, not read from the service, so the panel is drawn again
+    /// when the page finishes loading it.
+    /// </summary>
+    [Parameter, EditorRequired] public TourStatus Status { get; set; }
+
+    /// <summary>The guidance for the page as it stands, or null when the tour has nothing to say here.</summary>
+    [Parameter] public TourStep? Step { get; set; }
+
+    /// <summary>Raised when the tour starts or ends, so the page can show or drop its highlights.</summary>
+    [Parameter] public EventCallback OnChanged { get; set; }
+
+    private bool collapsed;
+    private bool closed;
+
+    private async Task StartAsync()
+    {
+        await Tour.StartAsync();
+        await OnChanged.InvokeAsync();
+    }
+
+    private async Task EndAsync()
+    {
+        await Tour.FinishAsync();
+        await OnChanged.InvokeAsync();
+    }
+}

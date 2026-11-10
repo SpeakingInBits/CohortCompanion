@@ -45,6 +45,32 @@ public sealed class QuizServiceTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task OnlyAnAdmin_CanListEveryonesQuizzes()
+    {
+        await service.CreateAsync(ownerId, "Mine");
+        await service.CreateAsync(otherId, "Theirs");
+
+        var instructorAskingForAll = await service.ListAsync(ownerId, isAdmin: false, everyone: true);
+        var adminAskingForAll = await service.ListAsync(ownerId, isAdmin: true, everyone: true);
+        var adminsOwn = await service.ListAsync(ownerId, isAdmin: true);
+
+        Assert.Equal(["Mine"], instructorAskingForAll.Select(q => q.Title));
+        Assert.Equal(["Mine", "Theirs"], adminAskingForAll.Select(q => q.Title).Order());
+        Assert.Equal("B", adminAskingForAll.Single(q => q.Title == "Theirs").OwnerName);
+        Assert.Equal(["Mine"], adminsOwn.Select(q => q.Title));
+    }
+
+    [Fact]
+    public async Task Admins_CannotOpenOrChangeAnotherInstructorsQuiz()
+    {
+        var quiz = await service.CreateAsync(otherId, "Theirs");
+
+        // Being an admin lets someone list and delete. It never lets them read or rewrite the questions.
+        Assert.Null(await service.GetAsync(quiz.Id, ownerId));
+        Assert.False(await service.SaveAsync(quiz, ownerId));
+    }
+
+    [Fact]
     public async Task List_SaysWhichQuizzesCanRunLive()
     {
         var draft = await service.CreateAsync(ownerId, "Draft");
@@ -57,7 +83,7 @@ public sealed class QuizServiceTests : IAsyncLifetime
         Assert.False(list.Single(q => q.Id == draft.Id).IsReady);
         Assert.True(list.Single(q => q.Id == ready.Id).IsReady);
         Assert.Equal(1, list.Single(q => q.Id == ready.Id).QuestionCount);
-        Assert.All(await service.ListAsync(null), q => Assert.Null(q.IsReady));
+        Assert.All(await service.ListAsync(ownerId, isAdmin: true, everyone: true), q => Assert.Null(q.IsReady));
     }
 
     [Fact]

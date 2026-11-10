@@ -63,6 +63,22 @@ public sealed class PresentationServiceTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task OnlyAnAdmin_CanListEveryonesDecks()
+    {
+        await service.CreateAsync(ownerId, "Mine");
+        await service.CreateAsync(otherId, "Theirs");
+
+        var instructorAskingForAll = await service.ListAsync(ownerId, isAdmin: false, everyone: true);
+        var adminAskingForAll = await service.ListAsync(ownerId, isAdmin: true, everyone: true);
+        var adminsOwn = await service.ListAsync(ownerId, isAdmin: true);
+
+        Assert.Equal(["Mine"], instructorAskingForAll.Select(p => p.Title));
+        Assert.Equal(["Mine", "Theirs"], adminAskingForAll.Select(p => p.Title).Order());
+        Assert.Equal("B", adminAskingForAll.Single(p => p.Title == "Theirs").OwnerName);
+        Assert.Equal(["Mine"], adminsOwn.Select(p => p.Title));
+    }
+
+    [Fact]
     public async Task Admin_CanDeleteAnyDeck()
     {
         var deck = await NewDeckAsync();
