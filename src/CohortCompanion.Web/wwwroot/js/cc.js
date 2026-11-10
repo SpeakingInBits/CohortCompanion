@@ -28,6 +28,15 @@ window.cc = {
         });
     },
 
+    // Whether this browser can save an image as WebP. One that can't quietly hands back a much larger PNG instead.
+    canEncodeWebp() {
+        try {
+            return document.createElement("canvas").toDataURL("image/webp").startsWith("data:image/webp");
+        } catch {
+            return false;
+        }
+    },
+
     // Keeps the phone's screen on during a live session, so it doesn't lock halfway through a slide. Browsers
     // drop the lock whenever the page is hidden, so it's taken again on return. Not every browser supports it.
     async keepScreenOn(on) {

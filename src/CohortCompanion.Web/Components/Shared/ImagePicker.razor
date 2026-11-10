@@ -28,6 +28,11 @@
 
     [Parameter] public string Label { get; set; } = "Image";
 
+    /// <summary>The longest side of a stored image, in pixels. Enough for a full-screen slide on a projector.</summary>
+    private const int MaxEdge = 1920;
+
+    private static readonly TimeSpan ShrinkTimeout = TimeSpan.FromSeconds(20);
+
     private ElementReference zone;
     private bool busy;
     private string? error;
@@ -46,8 +51,10 @@
         error = null;
         try
         {
+            var file = await ShrinkAsync(e.File);
+
             // One byte over the limit, so the service can tell the file was too big and say so.
-            await using var stream = e.File.OpenReadStream(ImageService.MaxBytes + 1);
+            await using var stream = file.OpenReadStream(ImageService.MaxBytes + 1);
             var result = await Images.UploadAsync(stream);
             error = result.Error;
             if (result.Url is not null)
@@ -62,6 +69,35 @@
         finally
         {
             busy = false;
+        }
+    }
+
+    /// <summary>
+    /// Has the browser scale a photo down and re-save it before it's uploaded. A photo straight from a phone is
+    /// several megabytes and far bigger than any screen it will be shown on, and every student downloads it.
+    /// Re-saving also drops what the camera embedded in the file, such as where the photo was taken.
+    /// </summary>
+    private async Task<IBrowserFile> ShrinkAsync(IBrowserFile file)
+    {
+        // A GIF would lose its animation, and a WebP file is already compact.
+        if (file.ContentType is not ("image/jpeg" or "image/png"))
+        {
+            return file;
+        }
+
+        try
+        {
+            // WebP is the smallest and keeps transparency. A browser that can't write it keeps the file's own type.
+            var format = await JS.InvokeAsync<bool>("cc.canEncodeWebp") ? "image/webp" : file.ContentType;
+
+            // The browser never answers for a file it can't read as an image, so don't wait for ever.
+            var smaller = await file.RequestImageFileAsync(format, MaxEdge, MaxEdge).AsTask().WaitAsync(ShrinkTimeout);
+            return smaller.Size > 0 && smaller.Size < file.Size ? smaller : file;
+        }
+        catch (Exception ex) when (ex is TimeoutException or JSException)
+        {
+            // The original is still checked and size-limited by the server.
+            return file;
         }
     }
 }
