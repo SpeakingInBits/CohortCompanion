@@ -59,7 +59,7 @@ public sealed partial class LiveSessionManager(
     public static readonly TimeSpan DeadlineGrace = TimeSpan.FromMilliseconds(500);
 
     /// <summary>A session with no activity for this long is ended, so per-student data can't linger.</summary>
-    public static readonly TimeSpan AbandonedAfter = TimeSpan.FromHours(1);
+    public static readonly TimeSpan AbandonedAfter = TimeSpan.FromHours(2.5);
 
     /// <summary>
     /// A quiz that reached its end is ended this long afterwards, in case the instructor doesn't, so nicknames and

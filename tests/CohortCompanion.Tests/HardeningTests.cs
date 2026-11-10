@@ -8,7 +8,7 @@ namespace CohortCompanion.Tests;
 public sealed class AbandonedSessionTests : LiveSessionTestBase
 {
     [Fact]
-    public async Task IdleSession_IsEndedAfterAnHour_AndItsStudentDataDeleted()
+    public async Task IdleSession_IsEndedOnceAbandoned_AndItsStudentDataDeleted()
     {
         var (id, code) = await RunningSessionAsync(SampleQuiz());
         await JoinAsync(code, "Sam");
