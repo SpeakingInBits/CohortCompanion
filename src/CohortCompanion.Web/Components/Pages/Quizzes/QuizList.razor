@@ -10,6 +10,7 @@
 @inject LiveSessionManager Manager
 @inject NavigationManager NavigationManager
 @inject AuditLog Audit
+@inject TourService Tour
 
 <PageTitle>Quizzes</PageTitle>
 
@@ -18,7 +19,7 @@
 <form class="row g-2 mb-4" style="max-width: 36rem" @onsubmit="CreateAsync">
     <div class="col">
         <label for="new-title" class="visually-hidden">New quiz title</label>
-        <input id="new-title" class="form-control" placeholder="New quiz title" maxlength="200" @bind="newTitle" @bind:event="oninput" />
+        <input id="new-title" class="form-control @TourStep.Highlight(TourTarget.NewQuizTitle)" placeholder="New quiz title" maxlength="200" @bind="newTitle" @bind:event="oninput" />
     </div>
     <div class="col-auto">
         <button type="submit" class="btn btn-primary" disabled="@string.IsNullOrWhiteSpace(newTitle)">Create quiz</button>
@@ -84,8 +85,8 @@ else
                         <td class="text-end text-nowrap">
                             @if (!showAll)
                             {
-                                <button type="button" class="btn btn-sm btn-primary" disabled="@(quiz.IsReady == false)" @onclick="() => RunAsync(quiz.Id)">Run live</button>
-                                <a class="btn btn-sm btn-outline-primary" href="quizzes/@quiz.Id/edit">Edit</a>
+                                <button type="button" class="btn btn-sm btn-primary @TourStep.Highlight(TourTarget.RunLive, quiz.Id)" disabled="@(quiz.IsReady == false)" @onclick="() => RunAsync(quiz.Id)">Run live</button>
+                                <a class="btn btn-sm btn-outline-primary @TourStep.Highlight(TourTarget.EditQuiz, quiz.Id)" href="quizzes/@quiz.Id/edit">Edit</a>
                             }
                             @if (pendingDelete == quiz.Id)
                             {
@@ -104,8 +105,13 @@ else
     </div>
 }
 
+<TourCoach Status="Tour.Status" Step="TourStep" OnChanged="StateHasChanged" />
+
 @code {
     [CascadingParameter] private Task<AuthenticationState> AuthState { get; set; } = default!;
+
+    /// <summary>The tour only guides an instructor through their own quizzes, which are the ones they can run.</summary>
+    private TourStep? TourStep => Tour.IsActive && !showAll && quizzes is not null ? TourGuide.ForQuizList(quizzes) : null;
 
     private List<QuizListItem>? quizzes;
     private string userId = "";
@@ -120,10 +126,11 @@ else
         var user = (await AuthState).User;
         userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
         isAdmin = user.IsInRole(Roles.Admin);
+        await Tour.LoadAsync(userId);
         await LoadAsync();
     }
 
-    private async Task LoadAsync() => quizzes = await Quizzes.ListAsync(showAll && isAdmin ? null : userId);
+    private async Task LoadAsync() => quizzes = await Quizzes.ListAsync(userId, isAdmin, everyone: showAll);
 
     private async Task ToggleAllAsync(ChangeEventArgs e)
     {

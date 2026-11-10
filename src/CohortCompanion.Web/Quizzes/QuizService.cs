@@ -5,7 +5,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace CohortCompanion.Web.Quizzes;
 
-/// <summary>A row in a quiz list. <c>IsReady</c> says whether it can run live, and is only worked out for the owner's own list.</summary>
+/// <summary>A row in a quiz list. <c>IsReady</c> says whether it can run live, and is only worked out for the caller's own list.</summary>
 public sealed record QuizListItem(int Id, string Title, QuizMode Mode, int QuestionCount, DateTime UpdatedAtUtc, string OwnerName, bool? IsReady = null);
 
 /// <summary>Quiz storage. Every read and write is limited to the owner, except the explicit admin paths.</summary>
@@ -16,17 +16,20 @@ public sealed class QuizService(
 {
     private DateTime UtcNow => timeProvider.GetUtcNow().UtcDateTime;
 
-    /// <summary>Lists one instructor's quizzes, or every quiz when <paramref name="ownerId"/> is null (admins only).</summary>
-    public async Task<List<QuizListItem>> ListAsync(string? ownerId, CancellationToken cancellationToken = default)
+    /// <summary>
+    /// Lists the caller's own quizzes. An admin can ask for everyone's instead; from anyone else that request is
+    /// ignored, so the rule holds wherever this is called from.
+    /// </summary>
+    public async Task<List<QuizListItem>> ListAsync(string userId, bool isAdmin = false, bool everyone = false, CancellationToken cancellationToken = default)
     {
         await using var db = await dbFactory.CreateDbContextAsync(cancellationToken);
-        if (ownerId is null)
+        if (everyone && isAdmin)
         {
-            var everyone = await db.Quizzes
+            var all = await db.Quizzes
                 .AsNoTracking()
                 .Select(q => new QuizListItem(q.Id, q.Title, q.Mode, q.Questions.Count, q.UpdatedAtUtc, q.Owner!.DisplayName, null))
                 .ToListAsync(cancellationToken);
-            return everyone.OrderByDescending(q => q.UpdatedAtUtc).ToList();
+            return all.OrderByDescending(q => q.UpdatedAtUtc).ToList();
         }
 
         // One instructor's quizzes are few enough to load whole, so the list can say which ones need fixing
@@ -37,7 +40,7 @@ public sealed class QuizService(
             .Include(q => q.Owner)
             .Include(q => q.Questions).ThenInclude(q => q.Options)
             .Include(q => q.Questions).ThenInclude(q => q.BlankAnswers)
-            .Where(q => q.OwnerId == ownerId)
+            .Where(q => q.OwnerId == userId)
             .ToListAsync(cancellationToken);
         return quizzes
             .OrderByDescending(q => q.UpdatedAtUtc)

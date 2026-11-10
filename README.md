@@ -38,6 +38,9 @@ Requirements: the .NET 10 SDK and SQL Server LocalDB (installed with Visual Stud
 
 ## Trying it out
 
+The first time you sign in, the home page offers a short tour that walks you through the steps below. You can
+take it again later with **Take the tour** on the home page.
+
 1. Under **Quizzes**, create a quiz, add a question, and save it. Then choose **Run live**.
 2. Open the join link in another browser or a private window, and enter a nickname.
 3. On the host page, choose **Open projector view** for what the class sees, then **Start**. **Copy link**

@@ -216,6 +216,34 @@ document.addEventListener("visibilitychange", () => {
     }
 });
 
+// Below the widest screens the tour panel floats over the page. When something the instructor is working on is
+// behind it, such as an answer option at the bottom of the window, the page scrolls that row up clear of the panel.
+// The page has spare room at the bottom for this. Only the panel's own controls, and rows too tall to fit, are left.
+document.addEventListener("focusin", (event) => {
+    const panel = document.querySelector(".tour-coach");
+    const target = event.target instanceof Element ? event.target : null;
+    if (!panel || !target || panel.contains(target)) {
+        return;
+    }
+
+    // The whole row, so an option's code box and remove button come into view with its text.
+    const row = (target.closest(".input-group, tr") ?? target).getBoundingClientRect();
+    const cover = panel.getBoundingClientRect();
+    const gap = 12;
+    const hidden = row.bottom > cover.top - gap && row.top < cover.bottom && row.right > cover.left && row.left < cover.right;
+    if (!hidden) {
+        return;
+    }
+
+    // Never so far that the row's top goes under the sticky bar at the top of the page.
+    const topBar = Math.max(0, document.querySelector("main > .top-row")?.getBoundingClientRect().bottom ?? 0);
+    const lift = Math.min(row.bottom - (cover.top - gap), row.top - topBar - gap);
+    if (lift > 0) {
+        const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+        window.scrollBy({ top: lift, behavior: reduce ? "auto" : "smooth" });
+    }
+});
+
 // Enhanced navigation swaps the page content without a page load, so the entrance animation has to be replayed.
 document.addEventListener("DOMContentLoaded", () => {
     window.Blazor?.addEventListener("enhancedload", () => {

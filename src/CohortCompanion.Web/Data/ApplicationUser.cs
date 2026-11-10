@@ -1,3 +1,4 @@
+using CohortCompanion.Web.Onboarding;
 using Microsoft.AspNetCore.Identity;
 
 namespace CohortCompanion.Web.Data;
@@ -12,4 +13,7 @@ public class ApplicationUser : IdentityUser
     public int? InviteCodeId { get; set; }
 
     public InviteCode? InviteCode { get; set; }
+
+    /// <summary>Whether the getting-started tour has been offered, is under way, or is over.</summary>
+    public TourStatus TourStatus { get; set; }
 }

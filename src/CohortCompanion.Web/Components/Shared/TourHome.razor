@@ -1,0 +1,51 @@
+@* The tour's place on the home page: the offer on a first sign-in, a way back in while it's under way, and a way to take it again. *@
+@using System.Security.Claims
+
+@inject TourService Tour
+@inject NavigationManager NavigationManager
+
+@if (loaded && Tour.Status == TourStatus.Finished)
+{
+    <p class="home-note tour-replay">
+        Want a walkthrough of running a quiz?
+        <button type="button" class="btn btn-link p-0 align-baseline" @onclick="StartAsync">Take the tour</button>
+    </p>
+}
+else if (loaded)
+{
+    <section class="tour-offer" aria-labelledby="tour-offer-title">
+        <div>
+            <p class="tour-eyebrow">@(Tour.IsActive ? "Tour in progress" : "New here?")</p>
+            <h2 id="tour-offer-title" class="tour-title">@(Tour.IsActive ? "Pick up where you left off" : TourGuide.OfferTitle)</h2>
+            <p class="tour-body">@TourGuide.OfferBody</p>
+        </div>
+        <div class="tour-footer">
+            <button type="button" class="btn btn-primary" @onclick="StartAsync">@(Tour.IsActive ? "Continue the tour" : "Start the tour")</button>
+            <button type="button" class="tour-quiet" @onclick="EndAsync">@(Tour.IsActive ? "End tour" : "Not now")</button>
+        </div>
+    </section>
+}
+
+@code {
+    [CascadingParameter] private Task<AuthenticationState> AuthState { get; set; } = default!;
+
+    private bool loaded;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if ((await AuthState).User.FindFirstValue(ClaimTypes.NameIdentifier) is { } userId)
+        {
+            await Tour.LoadAsync(userId);
+            loaded = true;
+        }
+    }
+
+    /// <summary>The tour begins on the quiz list, which works out the right step from what the instructor already has.</summary>
+    private async Task StartAsync()
+    {
+        await Tour.StartAsync();
+        NavigationManager.NavigateTo("quizzes");
+    }
+
+    private Task EndAsync() => Tour.FinishAsync();
+}
