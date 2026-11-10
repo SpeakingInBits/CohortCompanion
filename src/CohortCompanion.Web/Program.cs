@@ -74,6 +74,8 @@ builder.Services.AddSingleton<IImageStore>(string.IsNullOrWhiteSpace(imageOption
     ? new LocalImageStore(Path.Combine(builder.Environment.ContentRootPath, imageOptions.LocalPath))
     : new BlobImageStore(imageOptions));
 builder.Services.AddSingleton<ImageService>();
+builder.Services.AddSingleton<ImageCleanup>();
+builder.Services.AddHostedService<ImageCleanupWorker>();
 
 builder.Services.AddSingleton<LiveRateLimiter>();
 builder.Services.AddSingleton<HubRateLimitFilter>();
