@@ -3,6 +3,7 @@
 @rendermode InteractiveServer
 
 @using System.Security.Claims
+@using CohortCompanion.Shared.Live
 @using CohortCompanion.Web.Live
 @using CohortCompanion.Web.Presentations
 
@@ -71,7 +72,7 @@ else
                         <td class="text-end text-nowrap">
                             @if (!showAll)
                             {
-                                <button type="button" class="btn btn-sm btn-primary" @onclick="() => PresentAsync(item.Id)">Present</button>
+                                <button type="button" class="btn btn-sm btn-primary" @onclick="() => PresentAsync(item.Id)">@(IsLive(item.Id) ? "Resume presentation" : "Present")</button>
                                 <a class="btn btn-sm btn-outline-primary" href="presentations/@item.Id/edit">Edit</a>
                             }
                             @if (pendingDelete == item.Id)
@@ -127,6 +128,9 @@ else
         var presentation = await Presentations.CreateAsync(userId, newTitle);
         NavigationManager.NavigateTo($"presentations/{presentation.Id}/edit");
     }
+
+    /// <summary>Whether this instructor already has a session running for the deck, so Present would pick it back up.</summary>
+    private bool IsLive(int id) => Manager.FindLiveSession(userId, SessionKind.Presentation, id) is not null;
 
     private async Task PresentAsync(int id)
     {
