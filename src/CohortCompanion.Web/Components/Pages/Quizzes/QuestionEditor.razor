@@ -3,6 +3,9 @@
 @using CohortCompanion.Web.Data
 @using CohortCompanion.Web.Quizzes
 
+@inject IJSRuntime JS
+@implements IAsyncDisposable
+
 <div class="card mb-3">
     <div class="card-body">
         <div class="d-flex align-items-center gap-2 mb-3">
@@ -12,14 +15,64 @@
             <button type="button" class="btn btn-sm btn-outline-danger" @onclick="() => OnRemove.InvokeAsync()">Remove</button>
         </div>
 
-        <div class="mb-3">
-            <span class="form-label d-block">Prompt</span>
-            <RichTextEditor Value="@Question.Prompt" ValueChanged="SetPrompt" Height="9rem" Label="@($"Prompt for question {Number}")" />
-            @if (Question.Type == QuestionType.FillInBlank)
-            {
-                <div class="form-text">Write each blank as {{1}}, {{2}}, and so on. For example: The keyword {{1}} declares a constant in C#.</div>
-            }
-        </div>
+        @if (Question.Type == QuestionType.FillInBlank)
+        {
+            @* The prompt and the accepted answers sit together, so a blank and its answers can light up as a pair. *@
+            <div class="blank-area mb-3" id="@FieldId("blanks")" data-picked="@pickedChip" @ref="blankArea">
+                <span class="form-label d-block">Prompt</span>
+                <RichTextEditor Value="@editorHtml" ValueChanged="SetBlankPrompt" Height="9rem" Label="@($"Prompt for question {Number}")"
+                                InsertLabel="+ Add blank" InsertHtml="NewBlank" InsertDisabled="@(chips.Count >= BlankChips.Max)" />
+                <style>@((MarkupString)ChipStyles)</style>
+
+                @if (chips.Count == 0)
+                {
+                    <div class="form-text">
+                        Type your sentence, click where students should fill something in, then choose <strong>Add blank</strong>.
+                        For example: The capital of France is <span class="blank-chip">Blank 1</span>.
+                    </div>
+                }
+                else
+                {
+                    <div class="form-text">Click a blank to find its answers. To take a blank out, delete it like any other text.</div>
+                }
+
+                @for (var i = 0; i < chips.Count; i++)
+                {
+                    var number = i + 1;
+                    var chip = chips[i];
+                    var answers = Question.BlankAnswers.Where(a => a.BlankIndex == number).ToList();
+                    <div class="blank-group blank-color-@(i % BlankColors) @(chip == pickedChip ? "is-picked" : null)" data-blank="@chip" @key="chip">
+                        <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
+                            <h3 class="h6 mb-0"><span class="blank-chip">Blank @number</span></h3>
+                            <span class="text-secondary small me-auto">Students are marked correct for any of these answers.</span>
+                            <button type="button" class="btn btn-sm btn-link link-danger" @onclick="() => RemoveBlank(chip)">Remove blank @number</button>
+                        </div>
+                        @foreach (var answer in answers)
+                        {
+                            <div class="input-group mb-2" @key="answer">
+                                <input class="form-control" maxlength="200" placeholder="Accepted answer" aria-label="Accepted answer for blank @number"
+                                       @bind="answer.AcceptedText" @bind:after="Changed" />
+                                <select class="form-select" style="max-width: 13rem" aria-label="How closely an answer has to match" @bind="answer.MatchMode" @bind:after="Changed">
+                                    <option value="@MatchMode.CaseInsensitive">Ignore capitals</option>
+                                    <option value="@MatchMode.Fuzzy">Allow a small typo</option>
+                                    <option value="@MatchMode.Exact">Capitals must match</option>
+                                </select>
+                                <button type="button" class="btn btn-outline-danger" disabled="@(answers.Count <= 1)"
+                                        aria-label="Remove this accepted answer for blank @number" @onclick="() => RemoveAnswer(answer)">✕</button>
+                            </div>
+                        }
+                        <button type="button" class="btn btn-sm btn-outline-primary" @onclick="() => AddAnswer(number)">Add another accepted answer</button>
+                    </div>
+                }
+            </div>
+        }
+        else
+        {
+            <div class="mb-3">
+                <span class="form-label d-block">Prompt</span>
+                <RichTextEditor Value="@Question.Prompt" ValueChanged="SetPrompt" Height="9rem" Label="@($"Prompt for question {Number}")" />
+            </div>
+        }
 
         <div class="row g-3 mb-3">
             @if (Question.Type != QuestionType.WordCloud)
@@ -50,27 +103,6 @@
             </div>
         </details>
 
-        <details class="mb-3" open="@(!string.IsNullOrEmpty(Question.CodeSnippet))">
-            <summary>Code snippet</summary>
-            <div class="mt-2">
-                <label class="form-label" for="@FieldId("language")">Language</label>
-                <select id="@FieldId("language")" class="form-select mb-2" style="max-width: 16rem" @bind="Question.CodeLanguage" @bind:after="Changed">
-                    <option value="">Detect automatically</option>
-                    @foreach (var language in CodeLanguages.All)
-                    {
-                        <option value="@language.Id">@language.Name</option>
-                    }
-                </select>
-                <label class="form-label" for="@FieldId("code")">Code</label>
-                <textarea id="@FieldId("code")" class="form-control font-monospace mb-2" rows="5" spellcheck="false"
-                          @bind="Question.CodeSnippet" @bind:event="oninput" @bind:after="Changed"></textarea>
-                @if (!string.IsNullOrEmpty(Question.CodeSnippet))
-                {
-                    <CodeBlock Code="@Question.CodeSnippet" Language="@Question.CodeLanguage" />
-                }
-            </div>
-        </details>
-
         @switch (Question.Type)
         {
             case QuestionType.MultipleChoice:
@@ -95,8 +127,6 @@
                         </div>
                         <input class="form-control" maxlength="500" placeholder="Option @(optionIndex + 1)" aria-label="Option @(optionIndex + 1) text"
                                @bind="option.Text" @bind:after="Changed" />
-                        <input class="form-control font-monospace" placeholder="Code (optional)" aria-label="Option @(optionIndex + 1) code"
-                               @bind="option.CodeSnippet" @bind:after="Changed" />
                         <button type="button" class="btn btn-outline-danger" disabled="@(Question.Options.Count <= QuizRules.MinOptions)"
                                 aria-label="Remove option @(optionIndex + 1)" @onclick="() => RemoveOption(option)">✕</button>
                     </div>
@@ -104,31 +134,6 @@
 
                 <button type="button" class="btn btn-sm btn-outline-primary" disabled="@(Question.Options.Count >= QuizRules.MaxOptions)" @onclick="AddOption">Add option</button>
                 <div class="form-text">Tick the correct option or options.</div>
-                break;
-
-            case QuestionType.FillInBlank:
-                @if (Blanks.Count == 0)
-                {
-                    <p class="text-secondary mb-0">Add a blank to the prompt to set its accepted answers.</p>
-                }
-                @foreach (var blank in Blanks)
-                {
-                    <h3 class="h6 mt-3">Blank @blank: accepted answers</h3>
-                    @foreach (var answer in Question.BlankAnswers.Where(a => a.BlankIndex == blank))
-                    {
-                        <div class="input-group mb-2" @key="answer">
-                            <input class="form-control" maxlength="200" placeholder="Accepted answer" aria-label="Accepted answer for blank @blank"
-                                   @bind="answer.AcceptedText" @bind:after="Changed" />
-                            <select class="form-select" style="max-width: 13rem" aria-label="How to match this answer" @bind="answer.MatchMode" @bind:after="Changed">
-                                <option value="@MatchMode.Exact">Exact match</option>
-                                <option value="@MatchMode.CaseInsensitive">Ignore case</option>
-                                <option value="@MatchMode.Fuzzy">Allow a typo</option>
-                            </select>
-                            <button type="button" class="btn btn-outline-danger" aria-label="Remove accepted answer" @onclick="() => RemoveAnswer(answer)">✕</button>
-                        </div>
-                    }
-                    <button type="button" class="btn btn-sm btn-outline-primary" @onclick="() => AddAnswer(blank)">Add accepted answer</button>
-                }
                 break;
 
             case QuestionType.WordCloud:
@@ -153,11 +158,53 @@
 
     [Parameter] public EventCallback OnRemove { get; set; }
 
+    /// <summary>How many colors blanks cycle through. Matches the <c>blank-color-</c> styles.</summary>
+    private const int BlankColors = 5;
+
     private readonly string fieldPrefix = $"q{Guid.NewGuid():N}";
+
+    // The rest of these are for fill in the blank only.
+
+    /// <summary>The prompt as the editor holds it, with each blank as a chip rather than the stored <c>{{1}}</c>.</summary>
+    private string editorHtml = "";
+
+    /// <summary>The chip that stands for each blank, in reading order: <c>chips[0]</c> is blank 1.</summary>
+    private List<int> chips = [];
+
+    /// <summary>Answers of blanks deleted from the prompt, by chip, so undoing the delete brings them back.</summary>
+    private readonly Dictionary<int, List<BlankAnswer>> deleted = [];
+
+    /// <summary>The chip the instructor is working on, or 0. It and its answers are lit up together.</summary>
+    private int pickedChip;
+
+    private ElementReference blankArea;
+    private DotNetObjectReference<QuestionEditor>? selfReference;
+    private IJSObjectReference? blankLink;
 
     private string FieldId(string name) => $"{fieldPrefix}-{name}";
 
-    private IReadOnlyList<int> Blanks => BlankTokens.Find(Question.Prompt);
+    /// <summary>
+    /// Chips in the prompt are plain text to Blazor, so their number, color, and picked ring are set with styles.
+    /// Those follow reading order: put a blank in front of another and both show their new numbers at once.
+    /// </summary>
+    private string ChipStyles
+    {
+        get
+        {
+            var css = new System.Text.StringBuilder();
+            for (var i = 0; i < chips.Count; i++)
+            {
+                var chip = $"#{FieldId("blanks")} .blank-chip[data-blank='{chips[i]}']";
+                css.Append($"{chip}{{--blank:var(--word-{i % BlankColors})}}{chip}::after{{content:' {i + 1}'}}");
+                if (chips[i] == pickedChip)
+                {
+                    css.Append($"{chip}{{--blank-ring:2px}}");
+                }
+            }
+
+            return css.ToString();
+        }
+    }
 
     private string TypeName => Question.Type switch
     {
@@ -166,7 +213,144 @@
         _ => "Fill in the blank",
     };
 
+    protected override async Task OnInitializedAsync()
+    {
+        if (Question.Type != QuestionType.FillInBlank)
+        {
+            return;
+        }
+
+        // Until the first sync, each blank's chip is simply its stored number.
+        var stored = Question.Prompt;
+        chips = Enumerable.Range(1, 99).ToList();
+        editorHtml = BlankChips.ToEditor(stored);
+        SyncBlanks();
+        pickedChip = 0;
+
+        // An older quiz can have blanks numbered out of order, or answers for a blank that has gone. Both were
+        // just tidied, which is a change to save.
+        var tidied = Question.Prompt != stored || deleted.Count > 0;
+        deleted.Clear();
+        if (tidied)
+        {
+            await Changed();
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender && Question.Type == QuestionType.FillInBlank)
+        {
+            selfReference = DotNetObjectReference.Create(this);
+            blankLink = await JS.InvokeAsync<IJSObjectReference>("cc.linkBlanks", blankArea, selfReference);
+        }
+    }
+
     private Task Changed() => OnChanged.InvokeAsync();
+
+    private Task SetBlankPrompt(string html)
+    {
+        editorHtml = html;
+        SyncBlanks();
+        return Changed();
+    }
+
+    /// <summary>
+    /// Brings the question in line with the editor's text: blanks are numbered in reading order, and each blank's
+    /// accepted answers move with it.
+    /// </summary>
+    private void SyncBlanks()
+    {
+        var (prompt, now) = BlankTokens.Renumber(BlankChips.FromEditor(editorHtml));
+
+        foreach (var answer in Question.BlankAnswers.ToList())
+        {
+            var chip = chips.ElementAtOrDefault(answer.BlankIndex - 1);
+            var number = now.IndexOf(chip) + 1;
+            if (number > 0)
+            {
+                answer.BlankIndex = number;
+                continue;
+            }
+
+            Question.BlankAnswers.Remove(answer);
+            if (!deleted.TryGetValue(chip, out var kept))
+            {
+                deleted[chip] = kept = [];
+            }
+
+            kept.Add(answer);
+        }
+
+        for (var i = 0; i < now.Count; i++)
+        {
+            var number = i + 1;
+            if (deleted.Remove(now[i], out var back))
+            {
+                back.ForEach(a => a.BlankIndex = number);
+                Question.BlankAnswers.AddRange(back);
+            }
+
+            // Every blank shows at least one box to type an answer into.
+            if (!Question.BlankAnswers.Any(a => a.BlankIndex == number))
+            {
+                Question.BlankAnswers.Add(new BlankAnswer { BlankIndex = number });
+            }
+
+            // A blank that just appeared is picked, which points the instructor at where its answer goes.
+            if (!chips.Contains(now[i]))
+            {
+                pickedChip = now[i];
+            }
+        }
+
+        if (!now.Contains(pickedChip))
+        {
+            pickedChip = 0;
+        }
+
+        chips = now;
+        Question.Prompt = prompt;
+    }
+
+    /// <summary>The chip for the Add blank button to insert.</summary>
+    private string? NewBlank()
+    {
+        if (chips.Count >= BlankChips.Max)
+        {
+            return null;
+        }
+
+        var free = Enumerable.Range(1, 99).Where(id => !chips.Contains(id));
+        var chip = free.FirstOrDefault(id => !deleted.ContainsKey(id));
+        if (chip == 0)
+        {
+            deleted.Clear();
+            chip = free.First();
+        }
+
+        // The space gives the cursor somewhere to sit after the chip, so typing carries on normally.
+        return BlankChips.Html(chip) + "&nbsp;";
+    }
+
+    private Task RemoveBlank(int chip)
+    {
+        editorHtml = BlankChips.Remove(editorHtml, chip);
+        SyncBlanks();
+        deleted.Remove(chip);
+        return Changed();
+    }
+
+    [JSInvokable]
+    public void OnBlankPicked(int chip)
+    {
+        var picked = chips.Contains(chip) ? chip : 0;
+        if (picked != pickedChip)
+        {
+            pickedChip = picked;
+            StateHasChanged();
+        }
+    }
 
     private Task SetPrompt(string value)
     {
@@ -207,5 +391,23 @@
     {
         Question.BlankAnswers.Remove(answer);
         return Changed();
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (blankLink is not null)
+        {
+            try
+            {
+                await blankLink.InvokeVoidAsync("dispose");
+                await blankLink.DisposeAsync();
+            }
+            catch (JSDisconnectedException)
+            {
+                // The browser has gone, and the listeners with it.
+            }
+        }
+
+        selfReference?.Dispose();
     }
 }

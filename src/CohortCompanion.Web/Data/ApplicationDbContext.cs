@@ -98,7 +98,6 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
 
         builder.Entity<Question>(question =>
         {
-            question.Property(q => q.CodeLanguage).HasMaxLength(30);
             question.Property(q => q.ImageUrl).HasMaxLength(500);
             question.HasMany(q => q.Options)
                 .WithOne()

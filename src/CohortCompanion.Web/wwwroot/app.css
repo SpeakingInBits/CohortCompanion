@@ -1252,11 +1252,6 @@ html:has(.live-shell), body:has(.live-shell) {
     overflow-wrap: anywhere;
 }
 
-.option-text code {
-    margin-top: 0.2rem;
-    white-space: pre-wrap;
-}
-
 .option-check {
     flex: none;
     width: 1.5rem;
@@ -2256,4 +2251,55 @@ html:has(.live-shell), body:has(.live-shell) {
 .slide.editing .rz-html-editor {
     background: #ffffff;
     color: #1f2933;
+}
+
+/* ==========================================================================
+   Fill in the blank editor. A blank is a chip in the prompt, and the same chip
+   heads its accepted answers below. Picking either lights up both.
+   ========================================================================== */
+/* --blank is the blank's color. It comes from the answers group around a chip, or from the editor for a chip in the prompt. */
+.blank-chip {
+    display: inline-block;
+    padding: 0 0.5em;
+    border: 1px solid color-mix(in srgb, var(--blank, var(--brand)) 45%, transparent);
+    border-radius: 0.5em;
+    outline: var(--blank-ring, 0px) solid var(--blank, var(--brand));
+    outline-offset: 2px;
+    background: color-mix(in srgb, var(--blank, var(--brand)) 12%, var(--surface));
+    color: var(--blank, var(--brand));
+    font-size: 0.9em;
+    font-weight: 600;
+    line-height: 1.5;
+    white-space: nowrap;
+}
+
+.rz-html-editor .blank-chip {
+    cursor: pointer;
+}
+
+.blank-color-0 { --blank: var(--word-0); }
+.blank-color-1 { --blank: var(--word-1); }
+.blank-color-2 { --blank: var(--word-2); }
+.blank-color-3 { --blank: var(--word-3); }
+.blank-color-4 { --blank: var(--word-4); }
+
+.blank-group {
+    margin-top: 0.75rem;
+    padding: 0.75rem;
+    border: 1px solid var(--line);
+    border-left: 4px solid var(--blank);
+    border-radius: var(--radius-sm);
+    transition: border-color 0.15s, background-color 0.15s, box-shadow 0.15s;
+}
+
+.blank-group.is-picked {
+    --blank-ring: 2px;
+    border-color: var(--blank);
+    background: color-mix(in srgb, var(--blank) 6%, var(--surface));
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--blank) 18%, transparent);
+}
+
+.rich-text-insert {
+    margin: 0 0.25rem;
+    white-space: nowrap;
 }

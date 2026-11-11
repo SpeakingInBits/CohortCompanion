@@ -97,7 +97,7 @@ public static class QuizRules
             problems.Add($"{label} needs between {MinOptions} and {MaxOptions} options.");
         }
 
-        if (question.Options.Any(o => string.IsNullOrWhiteSpace(o.Text) && string.IsNullOrWhiteSpace(o.CodeSnippet)))
+        if (question.Options.Any(o => string.IsNullOrWhiteSpace(o.Text)))
         {
             problems.Add($"{label} has an empty option.");
         }
@@ -118,13 +118,13 @@ public static class QuizRules
         var blanks = BlankTokens.Find(question.Prompt);
         if (blanks.Count == 0)
         {
-            problems.Add($"{label} needs at least one blank in its prompt, written as {{{{1}}}}.");
+            problems.Add($"{label} needs at least one blank. Use Add blank in its prompt.");
             return;
         }
 
         if (!blanks.SequenceEqual(Enumerable.Range(1, blanks.Count)))
         {
-            problems.Add($"{label}: number the blanks in order, starting from {{{{1}}}}.");
+            problems.Add($"{label}: its blanks aren't numbered in order. Save the quiz to renumber them.");
         }
 
         foreach (var blank in blanks)

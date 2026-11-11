@@ -48,17 +48,15 @@ public sealed record StudentQuestion(
     int Id,
     QuestionType Type,
     string Prompt,
-    string? CodeSnippet,
-    string? CodeLanguage,
     string? ImageUrl,
     bool AllowMultipleSelect,
     int MaxEntries,
     int BlankCount,
     IReadOnlyList<StudentOption> Options);
 
-public sealed record StudentOption(int Index, string Text, string? CodeSnippet);
+public sealed record StudentOption(int Index, string Text);
 
-public sealed record OptionResult(int Index, string Text, string? CodeSnippet, int Count, bool? IsCorrect);
+public sealed record OptionResult(int Index, string Text, int Count, bool? IsCorrect);
 
 public sealed record WordCount(string Word, int Count);
 

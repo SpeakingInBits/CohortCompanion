@@ -121,6 +121,35 @@ public sealed class QuizServiceTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Save_NumbersBlanksInReadingOrder_AndTidiesTheirAnswers()
+    {
+        var quiz = await service.CreateAsync(ownerId, "Quiz");
+        quiz.Questions =
+        [
+            new Question
+            {
+                Type = QuestionType.FillInBlank,
+                Prompt = "<p>The {{5}} chased the {{2}}.</p>",
+                BlankAnswers =
+                [
+                    new BlankAnswer { BlankIndex = 2, AcceptedText = "mouse" },
+                    new BlankAnswer { BlankIndex = 5, AcceptedText = " cat " },
+                    new BlankAnswer { BlankIndex = 5, AcceptedText = "   " },
+                    new BlankAnswer { BlankIndex = 9, AcceptedText = "left over from a deleted blank" },
+                ],
+            },
+        ];
+
+        await service.SaveAsync(quiz, ownerId);
+        var reloaded = (await service.GetAsync(quiz.Id, ownerId))!;
+        var saved = reloaded.Questions.Single();
+
+        Assert.Equal("<p>The {{1}} chased the {{2}}.</p>", saved.Prompt);
+        Assert.Equal([(1, "cat"), (2, "mouse")], saved.BlankAnswers.Select(a => (a.BlankIndex, a.AcceptedText)));
+        Assert.Empty(QuizRules.Validate(reloaded));
+    }
+
+    [Fact]
     public async Task Save_ReplacesQuestionsWithoutLeavingOrphans()
     {
         var quiz = await service.CreateAsync(ownerId, "Quiz");

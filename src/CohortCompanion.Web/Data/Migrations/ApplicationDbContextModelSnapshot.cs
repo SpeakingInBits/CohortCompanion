@@ -141,9 +141,6 @@ namespace CohortCompanion.Web.Data.Migrations
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
 
-                    b.Property<string>("CodeSnippet")
-                        .HasColumnType("nvarchar(max)");
-
                     b.Property<bool>("IsCorrect")
                         .HasColumnType("bit");
 
@@ -366,13 +363,6 @@ namespace CohortCompanion.Web.Data.Migrations
 
                     b.Property<bool>("AllowMultipleSelect")
                         .HasColumnType("bit");
-
-                    b.Property<string>("CodeLanguage")
-                        .HasMaxLength(30)
-                        .HasColumnType("nvarchar(30)");
-
-                    b.Property<string>("CodeSnippet")
-                        .HasColumnType("nvarchar(max)");
 
                     b.Property<string>("ImageUrl")
                         .HasMaxLength(500)
