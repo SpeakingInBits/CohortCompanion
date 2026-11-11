@@ -28,8 +28,6 @@ public sealed record QuizSnapshot(
             index + 1,
             q.Type,
             q.Prompt,
-            q.CodeSnippet,
-            q.CodeLanguage,
             q.ImageUrl,
             q.TimeLimitSeconds ?? quiz.DefaultTimeLimitSeconds,
             q.Points,
@@ -37,7 +35,7 @@ public sealed record QuizSnapshot(
             q.PartialCredit,
             q.MaxEntries,
             BlankTokens.Find(q.Prompt).Count,
-            q.Options.OrderBy(o => o.Order).Select(o => new OptionSnapshot(o.Text, o.CodeSnippet, o.IsCorrect)).ToList(),
+            q.Options.OrderBy(o => o.Order).Select(o => new OptionSnapshot(o.Text, o.IsCorrect)).ToList(),
             q.BlankAnswers.Select(a => new BlankAnswerSnapshot(a.BlankIndex, a.AcceptedText, a.MatchMode)).ToList())).ToList());
 }
 
@@ -45,8 +43,6 @@ public sealed record QuestionSnapshot(
     int Id,
     QuestionType Type,
     string Prompt,
-    string? CodeSnippet,
-    string? CodeLanguage,
     string? ImageUrl,
     int? TimeLimitSeconds,
     int Points,
@@ -61,15 +57,13 @@ public sealed record QuestionSnapshot(
         Id,
         Type,
         Type == QuestionType.FillInBlank ? BlankTokens.ToDisplay(Prompt) : Prompt,
-        CodeSnippet,
-        CodeLanguage,
         ImageUrl,
         AllowMultipleSelect,
         MaxEntries,
         BlankCount,
-        Options.Select((o, i) => new StudentOption(i, o.Text, o.CodeSnippet)).ToList());
+        Options.Select((o, i) => new StudentOption(i, o.Text)).ToList());
 }
 
-public sealed record OptionSnapshot(string Text, string? CodeSnippet, bool IsCorrect);
+public sealed record OptionSnapshot(string Text, bool IsCorrect);
 
 public sealed record BlankAnswerSnapshot(int BlankIndex, string AcceptedText, MatchMode MatchMode);

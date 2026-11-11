@@ -81,7 +81,7 @@ public class QuizRulesTests
             BlankAnswers = [new BlankAnswer { BlankIndex = 2, AcceptedText = "cat" }],
         };
 
-        Assert.Contains(QuizRules.Validate(QuizWith(question)), p => p.Contains("number the blanks in order"));
+        Assert.Contains(QuizRules.Validate(QuizWith(question)), p => p.Contains("aren't numbered in order"));
     }
 
     [Fact]
@@ -100,4 +100,51 @@ public class QuizRulesTests
     [Fact]
     public void BlankTokens_FindsDistinctNumbersInOrder() =>
         Assert.Equal([1, 2], BlankTokens.Find("{{2}} then {{1}} then {{ 2 }}"));
+
+    [Fact]
+    public void Renumber_NumbersBlanksInReadingOrder_AndSaysWhatEachWas()
+    {
+        var (prompt, was) = BlankTokens.Renumber("<p>The {{7}} sat on the {{3}}, said the {{ 7 }}.</p>");
+
+        Assert.Equal("<p>The {{1}} sat on the {{2}}, said the {{1}}.</p>", prompt);
+        Assert.Equal([7, 3], was);
+    }
+
+    [Fact]
+    public void Renumber_LeavesAPromptWithoutBlanksAlone()
+    {
+        var (prompt, was) = BlankTokens.Renumber("<p>Hello</p>");
+
+        Assert.Equal("<p>Hello</p>", prompt);
+        Assert.Empty(was);
+        Assert.Equal("", BlankTokens.Renumber(null).Prompt);
+    }
+
+    [Fact]
+    public void BlankChips_RoundTripBetweenStoredAndEditorForms()
+    {
+        var editor = BlankChips.ToEditor("<p>The {{1}} and the {{2}}</p>");
+
+        Assert.DoesNotContain("{{", editor);
+        Assert.Contains("data-blank=\"2\"", editor);
+        Assert.Equal("<p>The {{1}} and the {{2}}</p>", BlankChips.FromEditor(editor));
+    }
+
+    [Fact]
+    public void BlankChips_AreReadBackHoweverTheBrowserWritesThem()
+    {
+        // A browser is free to reorder a chip's attributes and add its own. It also puts hard spaces around a chip.
+        var html = "<p>A&nbsp;<span contenteditable=\"false\" data-blank=\"4\" style=\"color: red;\" class=\"blank-chip\">Blank</span>&nbsp;here</p>";
+
+        Assert.Equal("<p>A {{4}} here</p>", BlankChips.FromEditor(html));
+        Assert.Equal("<p>Tom&nbsp;&amp; Jerry</p>", BlankChips.FromEditor("<p>Tom&nbsp;&amp; Jerry</p>"));
+    }
+
+    [Fact]
+    public void BlankChips_RemoveTakesOutOnlyThatBlank()
+    {
+        var editor = BlankChips.ToEditor("<p>{{1}} then {{2}}</p>") + "{{1}}";
+
+        Assert.Equal("<p> then {{2}}</p>", BlankChips.FromEditor(BlankChips.Remove(editor, 1)));
+    }
 }

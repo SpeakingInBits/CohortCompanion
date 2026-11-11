@@ -98,8 +98,9 @@ release. Choose what's in the release when you start the run, which picks the ve
 To choose the number yourself, enter it under **Version number**. It has to be newer than the latest release. If a deploy
 fails, no release is created, and the next run uses the same number. If only the release fails, re-run that failed job.
 
-Migrations run before the new code goes live, so the old code briefly runs against the new schema. Keep them compatible
-with the previous release: for example, stop using a column in one release and drop it in the next.
+Migrations run before the new code goes live, so the old code briefly runs against the new schema. A column the app
+has stopped using is dropped in the same release, rather than kept for one more. Until the deploy finishes, pages of the
+old code that still read that column can fail, so deploy when no class is running.
 
 It needs a one-time setup:
 

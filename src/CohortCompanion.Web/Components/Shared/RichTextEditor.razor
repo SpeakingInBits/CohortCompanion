@@ -1,7 +1,10 @@
 @* The one place that knows which rich-text library we use, so it can be swapped later. *@
+@using Radzen
 @using Radzen.Blazor
 
-<RadzenHtmlEditor Value="@Value" ValueChanged="OnChanged" Input="OnInput" style="@($"height: {Height}; width: 100%;")" aria-label="@Label">
+@inject IJSRuntime JS
+
+<RadzenHtmlEditor @ref="editor" Value="@Value" ValueChanged="OnChanged" Input="OnInput" style="@($"height: {Height}; width: 100%;")" aria-label="@Label">
     <RadzenHtmlEditorBold />
     <RadzenHtmlEditorItalic />
     <RadzenHtmlEditorUnderline />
@@ -12,6 +15,17 @@
     <RadzenHtmlEditorLink />
     <RadzenHtmlEditorUnlink />
     <RadzenHtmlEditorColor />
+    @if (InsertLabel is not null)
+    {
+        <RadzenHtmlEditorSeparator />
+        <RadzenHtmlEditorCustomTool>
+            <Template>
+                @* Not taking focus on the way down keeps the cursor in the text, where the new item belongs. *@
+                <button type="button" class="btn btn-sm btn-primary rich-text-insert" disabled="@InsertDisabled"
+                        @onmousedown:preventDefault @onclick="InsertAsync">@InsertLabel</button>
+            </Template>
+        </RadzenHtmlEditorCustomTool>
+    }
 </RadzenHtmlEditor>
 
 @code {
@@ -23,7 +37,28 @@
 
     [Parameter] public string Label { get; set; } = "Text";
 
+    /// <summary>Adds a toolbar button with this text that puts <see cref="InsertHtml"/> where the cursor is.</summary>
+    [Parameter] public string? InsertLabel { get; set; }
+
+    /// <summary>Asked for the HTML to insert each time the button is pressed. Nothing is inserted when it returns null.</summary>
+    [Parameter] public Func<string?>? InsertHtml { get; set; }
+
+    [Parameter] public bool InsertDisabled { get; set; }
+
+    private RadzenHtmlEditor editor = default!;
+
     private Task OnChanged(string value) => ValueChanged.InvokeAsync(value);
 
     private Task OnInput(string value) => ValueChanged.InvokeAsync(value);
+
+    private async Task InsertAsync()
+    {
+        if (InsertHtml?.Invoke() is not { Length: > 0 } html)
+        {
+            return;
+        }
+
+        await JS.InvokeVoidAsync("cc.placeCaret", editor.Element);
+        await editor.ExecuteCommandAsync(HtmlEditorCommands.InsertHtml, html);
+    }
 }

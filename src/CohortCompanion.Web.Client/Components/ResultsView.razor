@@ -15,10 +15,6 @@
                         <span class="result-tick" aria-label="Correct answer">✓ </span>
                     }
                     @option.Text
-                    @if (!string.IsNullOrEmpty(option.CodeSnippet))
-                    {
-                        <code class="d-block">@option.CodeSnippet</code>
-                    }
                 </span>
                 <span class="result-count">@option.Count</span>
             </div>

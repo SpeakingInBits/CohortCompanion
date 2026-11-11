@@ -49,6 +49,80 @@ window.cc = {
         }
     },
 
+    // Gets a rich-text editor ready for something to be inserted: the cursor goes back to where it last was in
+    // that editor, or to the end of the text if it has never been there.
+    placeCaret(editor) {
+        const text = editor?.querySelector("[contenteditable]:not([contenteditable=false])");
+        if (!text) {
+            return;
+        }
+
+        const selection = getSelection();
+        if (selection.rangeCount && text.contains(selection.anchorNode)) {
+            return;
+        }
+
+        let range = lastCaret.get(text);
+        if (!range || !text.contains(range.commonAncestorContainer)) {
+            range = document.createRange();
+            range.selectNodeContents(text);
+            range.collapse(false);
+        }
+
+        text.focus({ preventScroll: true });
+        selection.removeAllRanges();
+        selection.addRange(range);
+    },
+
+    // Reports which blank of a fill-in-the-blank question the instructor is working on, so the page can light up
+    // that blank in the prompt together with its accepted answers. A blank is picked by clicking it in the prompt,
+    // or by clicking or typing in its answers. Leaving the question picks none, which is reported as 0.
+    linkBlanks(area, dotNet) {
+        const blankOf = (target) => {
+            const hit = target instanceof Element ? target.closest("[data-blank]") : null;
+            return hit && area.contains(hit) ? Number(hit.dataset.blank) : 0;
+        };
+
+        // The page writes its current pick onto the area, so a pick it made itself is never reported back.
+        const pick = (blank) => {
+            if (blank !== Number(area.dataset.picked ?? 0)) {
+                dotNet.invokeMethodAsync("OnBlankPicked", blank);
+            }
+        };
+
+        const onClick = (event) => pick(blankOf(event.target));
+        const onFocusIn = (event) => {
+            const blank = blankOf(event.target);
+            if (blank) {
+                pick(blank);
+            }
+        };
+        const onPointerDown = (event) => {
+            if (!(event.target instanceof Node && area.contains(event.target))) {
+                pick(0);
+            }
+        };
+        const onFocusOut = (event) => {
+            if (event.relatedTarget instanceof Node && !area.contains(event.relatedTarget)) {
+                pick(0);
+            }
+        };
+
+        area.addEventListener("click", onClick);
+        area.addEventListener("focusin", onFocusIn);
+        area.addEventListener("focusout", onFocusOut);
+        document.addEventListener("pointerdown", onPointerDown);
+
+        return {
+            dispose() {
+                area.removeEventListener("click", onClick);
+                area.removeEventListener("focusin", onFocusIn);
+                area.removeEventListener("focusout", onFocusOut);
+                document.removeEventListener("pointerdown", onPointerDown);
+            },
+        };
+    },
+
     // The browser's IANA time zone, such as America/Chicago, so the server can show times on the viewer's clock.
     timeZone() {
         return Intl.DateTimeFormat().resolvedOptions().timeZone ?? null;
@@ -202,6 +276,19 @@ window.cc = {
     },
 };
 
+// Where the cursor last was in each piece of editable text. The browser forgets this once focus moves away.
+const lastCaret = new WeakMap();
+
+document.addEventListener("selectionchange", () => {
+    const selection = getSelection();
+    const node = selection.rangeCount ? selection.anchorNode : null;
+    const element = node instanceof Element ? node : node?.parentElement;
+    const text = element?.closest("[contenteditable]:not([contenteditable=false])");
+    if (text) {
+        lastCaret.set(text, selection.getRangeAt(0).cloneRange());
+    }
+});
+
 let wakeLock = null;
 let wakeLockWanted = false;
 
@@ -235,7 +322,7 @@ document.addEventListener("focusin", (event) => {
         return;
     }
 
-    // The whole row, so an option's code box and remove button come into view with its text.
+    // The whole row, so an option's remove button comes into view with its text.
     const row = (target.closest(".input-group, tr") ?? target).getBoundingClientRect();
     const cover = panel.getBoundingClientRect();
     const gap = 12;

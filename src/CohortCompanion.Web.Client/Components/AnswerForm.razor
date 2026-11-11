@@ -16,13 +16,7 @@
                         aria-pressed="@(isSelected ? "true" : "false")"
                         @onclick="() => Toggle(option.Index)">
                     <span class="option-letter" aria-hidden="true">@((char)('A' + i % 26))</span>
-                    <span class="option-text">
-                        @option.Text
-                        @if (!string.IsNullOrEmpty(option.CodeSnippet))
-                        {
-                            <code class="d-block">@option.CodeSnippet</code>
-                        }
-                    </span>
+                    <span class="option-text">@option.Text</span>
                     <svg class="option-check" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5" /></svg>
                 </button>
             }

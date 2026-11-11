@@ -48,10 +48,6 @@ public class Question
     /// <summary>Sanitized HTML.</summary>
     public string Prompt { get; set; } = "";
 
-    public string? CodeSnippet { get; set; }
-
-    public string? CodeLanguage { get; set; }
-
     public string? ImageUrl { get; set; }
 
     /// <summary>Overrides the quiz default when set.</summary>
@@ -84,8 +80,6 @@ public class ChoiceOption
     public string Text { get; set; } = "";
 
     public bool IsCorrect { get; set; }
-
-    public string? CodeSnippet { get; set; }
 }
 
 public class BlankAnswer

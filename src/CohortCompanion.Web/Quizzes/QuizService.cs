@@ -122,13 +122,34 @@ public sealed class QuizService(
         return deleted == 1;
     }
 
-    private Question CleanCopy(Question question, int index) => new()
+    private Question CleanCopy(Question question, int index)
+    {
+        var prompt = sanitizer.Sanitize(question.Prompt);
+        if (question.Type != QuestionType.FillInBlank)
+        {
+            return CleanCopy(question, index, prompt, []);
+        }
+
+        // Blanks are stored numbered 1, 2, 3 in reading order, which is what a live session counts on. Accepted
+        // answers follow their blank. Empty ones are dropped, and so are any left over from a blank that has gone.
+        var (renumbered, was) = BlankTokens.Renumber(prompt);
+        var answers = question.BlankAnswers
+            .Select(a => new BlankAnswer
+            {
+                BlankIndex = was.IndexOf(a.BlankIndex) + 1,
+                AcceptedText = Clean(a.AcceptedText, 200),
+                MatchMode = a.MatchMode,
+            })
+            .Where(a => a.BlankIndex > 0 && a.AcceptedText.Length > 0)
+            .ToList();
+        return CleanCopy(question, index, renumbered, answers);
+    }
+
+    private static Question CleanCopy(Question question, int index, string prompt, List<BlankAnswer> blankAnswers) => new()
     {
         Order = index,
         Type = question.Type,
-        Prompt = sanitizer.Sanitize(question.Prompt),
-        CodeSnippet = Blank(question.CodeSnippet),
-        CodeLanguage = Blank(question.CodeSnippet) is null ? null : Blank(question.CodeLanguage),
+        Prompt = prompt,
         ImageUrl = Images.ImageService.OwnImageOrNull(question.ImageUrl),
         TimeLimitSeconds = question.TimeLimitSeconds,
         Points = question.Points,
@@ -142,16 +163,8 @@ public sealed class QuizService(
                 Order = i,
                 Text = Clean(o.Text, 500),
                 IsCorrect = o.IsCorrect,
-                CodeSnippet = Blank(o.CodeSnippet),
             }).ToList(),
-        BlankAnswers = question.Type != QuestionType.FillInBlank
-            ? []
-            : question.BlankAnswers.Select(a => new BlankAnswer
-            {
-                BlankIndex = a.BlankIndex,
-                AcceptedText = Clean(a.AcceptedText, 200),
-                MatchMode = a.MatchMode,
-            }).ToList(),
+        BlankAnswers = blankAnswers,
     };
 
     private static string Clean(string? text, int maxLength)
@@ -159,6 +172,4 @@ public sealed class QuizService(
         var trimmed = (text ?? "").Trim();
         return trimmed.Length <= maxLength ? trimmed : trimmed[..maxLength];
     }
-
-    private static string? Blank(string? text) => string.IsNullOrWhiteSpace(text) ? null : text;
 }

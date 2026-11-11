@@ -28,7 +28,6 @@ public static class ResultsBuilder
                 Options: question.Options.Select((option, index) => new OptionResult(
                     index,
                     option.Text,
-                    option.CodeSnippet,
                     answers.Count(a => a.Options?.Contains(index) == true),
                     reveal ? option.IsCorrect : null)).ToList()),
 

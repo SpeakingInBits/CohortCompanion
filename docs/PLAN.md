@@ -22,7 +22,7 @@ or a short join link.
 | Quiz pacing | Instructor-paced, or timed with a time limit per question and automatic advance |
 | Scoring | Optional per quiz |
 | Slide authoring | Visual editor aimed at non-technical instructors |
-| Code support | Syntax highlighting in slides and quiz questions |
+| Code support | Syntax highlighting in slides |
 | Local database | SQL Server LocalDB |
 | Production database | Azure SQL |
 | LMS | Canvas (LTI 1.3) is a future option; design now so it can be added |
@@ -138,8 +138,8 @@ docs/
 | `Presentation` | Id, OwnerId, Title, ThemeId, CreatedAt, UpdatedAt |
 | `Slide` | Id, PresentationId, Order, Layout, Content (JSON of blocks), SpeakerNotes |
 | `Quiz` | Id, OwnerId, Title, Mode (`InstructorPaced`, `Timed`), ScoringEnabled, SpeedBonusEnabled, DefaultTimeLimitSeconds, ShowLeaderboard |
-| `Question` | Id, QuizId, Order, Type (`MultipleChoice`, `WordCloud`, `FillInBlank`), Prompt (sanitized HTML), CodeSnippet, CodeLanguage, ImageUrl, TimeLimitSeconds, Points |
-| `ChoiceOption` | Id, QuestionId, Order, Text, IsCorrect, CodeSnippet |
+| `Question` | Id, QuizId, Order, Type (`MultipleChoice`, `WordCloud`, `FillInBlank`), Prompt (sanitized HTML), ImageUrl, TimeLimitSeconds, Points |
+| `ChoiceOption` | Id, QuestionId, Order, Text, IsCorrect |
 | `BlankAnswer` | Id, QuestionId, BlankIndex, AcceptedText, MatchMode (`Exact`, `CaseInsensitive`, `Fuzzy`) |
 
 ### Running
@@ -201,7 +201,9 @@ Notes:
   - The instructor can hide a word live
   - Never scored. Used as a poll inside a quiz
 - **Fill in the blank**
-  - The prompt contains one or more blanks, for example `The keyword {{1}} declares a constant in C#.`
+  - The instructor puts blanks in the prompt with an **Add blank** button. Each blank shows as a numbered chip,
+    is kept in reading order, and is stored as `{{1}}`, `{{2}}` and so on
+  - Picking a blank in the prompt, or its answers below, highlights the two together
   - Each blank has a list of accepted answers and a match mode. Fuzzy mode uses Levenshtein distance ≤ 1
     for answers of 5 or more characters
   - Results: the most common answers per blank

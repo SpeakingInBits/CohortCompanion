@@ -45,7 +45,7 @@ public class TourGuideTests
             phase,
             QuestionIndex: 0,
             questionCount,
-            new QuestionSnapshot(1, type, "<p>What is 2 + 2?</p>", null, null, null, null, 1000, false, false, 1, 0, [], []),
+            new QuestionSnapshot(1, type, "<p>What is 2 + 2?</p>", null, null, 1000, false, false, 1, 0, [], []),
             RemainingMs: null,
             IsPaused: false,
             responses,
