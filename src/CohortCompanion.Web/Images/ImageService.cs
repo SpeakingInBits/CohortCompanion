@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using System.Text.RegularExpressions;
 using Azure.Identity;
 using Azure.Storage.Blobs;
@@ -20,11 +21,19 @@ public sealed class ImageOptions
 
 public sealed record StoredImage(Stream Content, string ContentType);
 
+public sealed record StoredImageInfo(string Name, DateTimeOffset SavedAt);
+
 public interface IImageStore
 {
     Task SaveAsync(string name, Stream content, string contentType, CancellationToken cancellationToken);
 
     Task<StoredImage?> OpenAsync(string name, CancellationToken cancellationToken);
+
+    /// <summary>Everything in the store, with when each file was saved.</summary>
+    IAsyncEnumerable<StoredImageInfo> ListAsync(CancellationToken cancellationToken);
+
+    /// <summary>Deletes an image. Does nothing if it's already gone.</summary>
+    Task DeleteAsync(string name, CancellationToken cancellationToken);
 }
 
 public sealed class LocalImageStore(string folder) : IImageStore
@@ -42,6 +51,20 @@ public sealed class LocalImageStore(string folder) : IImageStore
         return Task.FromResult(File.Exists(path)
             ? new StoredImage(File.OpenRead(path), ImageService.ContentTypeFor(name))
             : null);
+    }
+
+    public IAsyncEnumerable<StoredImageInfo> ListAsync(CancellationToken cancellationToken)
+    {
+        var directory = new DirectoryInfo(folder);
+        return (directory.Exists ? directory.EnumerateFiles() : [])
+            .Select(file => new StoredImageInfo(file.Name, file.LastWriteTimeUtc))
+            .ToAsyncEnumerable();
+    }
+
+    public Task DeleteAsync(string name, CancellationToken cancellationToken)
+    {
+        File.Delete(Path.Combine(folder, name));
+        return Task.CompletedTask;
     }
 }
 
@@ -67,6 +90,18 @@ public sealed class BlobImageStore(ImageOptions options) : IImageStore
 
         return new StoredImage(await blob.OpenReadAsync(cancellationToken: cancellationToken), ImageService.ContentTypeFor(name));
     }
+
+    public async IAsyncEnumerable<StoredImageInfo> ListAsync([EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        await foreach (var blob in container.GetBlobsAsync(cancellationToken: cancellationToken))
+        {
+            // A blob with no date is treated as brand new, so it's never deleted by mistake.
+            yield return new StoredImageInfo(blob.Name, blob.Properties.CreatedOn ?? blob.Properties.LastModified ?? DateTimeOffset.MaxValue);
+        }
+    }
+
+    public async Task DeleteAsync(string name, CancellationToken cancellationToken) =>
+        await container.GetBlobClient(name).DeleteIfExistsAsync(cancellationToken: cancellationToken);
 }
 
 public sealed record ImageUploadResult(string? Url, string? Error);

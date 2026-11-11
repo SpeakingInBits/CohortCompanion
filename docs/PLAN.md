@@ -169,7 +169,8 @@ Notes:
     links, and text color from the theme palette
   - Properties panel on the right: layout, background, speaker notes
   - Image upload by drag-and-drop or paste. Images are stored in Azure Blob Storage, or on local disk
-    in dev
+    in dev. The browser scales photos down to 1920 pixels and saves them as WebP before uploading, and
+    images that nothing uses any more are deleted about a day later
   - Code block: paste code, pick a language, and get a live highlighted preview
   - A handful of built-in themes so instructors never fiddle with fonts or colors
   - Autosave with an "All changes saved" indicator. Undo and redo
